@@ -10,7 +10,7 @@ import type { RGB } from "./floodFill";
  */
 export function getCanvasCoordinates(
   canvas: HTMLCanvasElement,
-  event: MouseEvent | React.MouseEvent
+  event: MouseEvent | React.MouseEvent | PointerEvent | React.PointerEvent
 ): { x: number; y: number } {
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rect.width;

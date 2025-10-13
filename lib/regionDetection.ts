@@ -3,7 +3,7 @@
  * Identifies and maps distinct bounded regions in an image
  */
 
-import { getPixelColor, colorsMatch, type RGB, type Point } from "./floodFill";
+import { getPixelColor, type RGB, type Point } from "./floodFill";
 import { isBoundaryPixel } from "./canvasUtils";
 
 export interface Region {
