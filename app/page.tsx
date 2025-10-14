@@ -43,7 +43,7 @@ export default function Home() {
   // Show loading screen while processing
   if (selectedImage && !processedData) {
     return (
-      <div className="h-full">
+      <div className="h-full overflow-hidden">
         <LoadingScreen />
       </div>
     )
@@ -52,7 +52,7 @@ export default function Home() {
   // Show drawing screen with processed data
   if (processedData) {
     return (
-      <div className="h-full">
+      <div className="h-full overflow-hidden">
         <DrawingScreen data={processedData} onBack={handleBack} />
       </div>
     )
@@ -60,7 +60,7 @@ export default function Home() {
 
   // Show image gallery
   return (
-    <div className="h-full">
+    <div className="h-full overflow-hidden">
       <ImageGallery images={IMAGES} onSelect={handleImageSelect} />
     </div>
   )

@@ -14,7 +14,7 @@ interface ImageGalleryProps {
 
 export default function ImageGallery({ images, onSelect }: ImageGalleryProps) {
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="flex flex-col gap-6 p-6 h-full overflow-y-auto">
       {/* Header */}
       <h1 className="text-center text-6xl font-bold">Emily&apos;s Coloring Book</h1>
 

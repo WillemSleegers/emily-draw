@@ -32,6 +32,7 @@ export default function Canvas({ regionMap, size, fillColor }: CanvasProps) {
   }, [size])
 
   const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    event.preventDefault()
     const canvas = canvasRef.current
     if (!canvas || !regionMap) return
 
@@ -49,6 +50,7 @@ export default function Canvas({ regionMap, size, fillColor }: CanvasProps) {
     const canvas = canvasRef.current
     if (!canvas || !regionMap || !isDrawing || lockedRegionId === null) return
 
+    event.preventDefault()
     const ctx = canvas.getContext("2d")
     if (!ctx) return
 
@@ -180,7 +182,7 @@ export default function Canvas({ regionMap, size, fillColor }: CanvasProps) {
       ref={canvasRef}
       width={size}
       height={size}
-      className="w-full h-full"
+      className="w-full h-full touch-none"
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}

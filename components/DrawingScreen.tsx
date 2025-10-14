@@ -21,7 +21,7 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
   const { regionMap, outlineImage } = data
 
   return (
-    <div className="flex flex-row gap-4 h-full">
+    <div className="flex flex-row gap-4 h-full overflow-hidden touch-none">
       {/* Left column: Controls */}
       <div className="flex flex-col gap-4 flex-shrink-0 p-4 bg-white dark:bg-gray-800 rounded-2xl border-4 border-gray-300 dark:border-gray-700 shadow-xl">
         <Button variant="outline" className="size-12" onClick={onBack}>
@@ -30,7 +30,7 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
       </div>
 
       {/* Middle column: Canvas */}
-      <div className="flex-1 flex items-center justify-center min-w-0 min-h-0">
+      <div className="flex-1 flex items-center justify-center min-w-0 min-h-0 overflow-hidden">
         <div className="relative h-full aspect-square max-w-full border-4 border-gray-300 dark:border-gray-700 rounded-2xl shadow-2xl overflow-hidden">
           {/* Drawing canvas (bottom layer) */}
           <Canvas
@@ -46,7 +46,7 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
       </div>
 
       {/* Right column: Color picker */}
-      <div className="w-32 flex-shrink-0">
+      <div className="w-32 flex-shrink-0 overflow-y-auto touch-pan-y">
         <ColorPicker selectedColor={fillColor} onColorChange={setFillColor} />
       </div>
     </div>
