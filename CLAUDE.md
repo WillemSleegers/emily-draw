@@ -7,6 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Emily Draw** is a digital coloring book application designed for young children (around 3 years old) to color images on touchscreen devices like iPads.
 
 ### Core Features
+
 - **Region-Locked Drawing**: Intelligent stay-within-the-lines functionality that automatically detects bounded regions in outline images and prevents coloring outside them
 - **Touch-Optimized**: Designed primarily for iPad/touchscreen use with large, easy-to-tap controls
 - **Child-Friendly UI**: Large square buttons with visual-only indicators (no text labels) for brush size and type selection
@@ -17,11 +18,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Automatic Drawing Continuation**: Seamlessly resume drawing when re-entering the canvas while holding down
 
 ### Technical Stack
+
 This is a Next.js 15 application using the App Router, React Server Components (RSC), TypeScript, and Tailwind CSS v4. The project is configured with shadcn/ui components using the "New York" style variant.
 
 ## Architecture
 
 ### Tech Stack
+
 - **Framework**: Next.js 15.5.4 with App Router and Turbopack
 - **React**: v19.1.0 with React Server Components
 - **TypeScript**: Strict mode enabled (target: ES2017)
@@ -30,6 +33,7 @@ This is a Next.js 15 application using the App Router, React Server Components (
 - **Design System**: CSS variables with light/dark mode support using OKLCH color space
 
 ### Project Structure
+
 - `/app` - Next.js App Router pages and layouts
   - `layout.tsx` - Root layout with Geist font configuration
   - `page.tsx` - Home page component with image selection
@@ -52,7 +56,9 @@ This is a Next.js 15 application using the App Router, React Server Components (
   - `/images` - Coloring book outline images (1000x1000px)
 
 ### Path Aliases
+
 The project uses `@/*` alias pointing to the root directory:
+
 - `@/components` - UI components
 - `@/lib/utils` - Utility functions
 - `@/hooks` - React hooks
