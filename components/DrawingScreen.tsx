@@ -4,6 +4,7 @@ import { useState } from "react"
 import Canvas from "@/components/Canvas"
 import OutlineOverlay from "@/components/OutlineOverlay"
 import ColorPicker from "@/components/ColorPicker"
+import BrushSettings, { type BrushType, type BrushSize, getBrushSizePixels } from "@/components/BrushSettings"
 import { ProcessedImageData } from "@/lib/processImage"
 import { ArrowBigLeftIcon } from "lucide-react"
 import { Button } from "./ui/button"
@@ -18,15 +19,25 @@ interface DrawingScreenProps {
 
 export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
   const [fillColor, setFillColor] = useState("#FF0000")
+  const [brushSize, setBrushSize] = useState<BrushSize>("medium")
+  const [brushType, setBrushType] = useState<BrushType>("solid")
   const { regionMap, outlineImage } = data
 
   return (
     <div className="flex flex-row gap-4 h-full overflow-hidden touch-none">
       {/* Left column: Controls */}
-      <div className="flex flex-col gap-4 flex-shrink-0 p-4 bg-white dark:bg-gray-800 rounded-2xl border-4 border-gray-300 dark:border-gray-700 shadow-xl">
-        <Button variant="outline" className="size-12" onClick={onBack}>
-          <ArrowBigLeftIcon />
-        </Button>
+      <div className="flex flex-col gap-4 flex-shrink-0 overflow-y-auto touch-pan-y">
+        <div className="p-4 bg-white dark:bg-gray-800 rounded-2xl border-4 border-gray-300 dark:border-gray-700 shadow-xl">
+          <Button variant="outline" className="size-12" onClick={onBack}>
+            <ArrowBigLeftIcon />
+          </Button>
+        </div>
+        <BrushSettings
+          size={brushSize}
+          onSizeChange={setBrushSize}
+          brushType={brushType}
+          onBrushTypeChange={setBrushType}
+        />
       </div>
 
       {/* Middle column: Canvas */}
@@ -37,6 +48,8 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
             regionMap={regionMap}
             size={CANVAS_SIZE}
             fillColor={fillColor}
+            brushSize={getBrushSizePixels(brushSize)}
+            brushType={brushType}
           />
           {/* Outline overlay (top layer) */}
           {outlineImage && (

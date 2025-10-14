@@ -19,7 +19,6 @@ export async function processImage(
   // Load and process image data for region detection
   const imageData = await loadImageData(imgUrl)
   const regionMap = detectRegions(imageData, 128, 100)
-  console.log(`Detected ${regionMap.regions.length} regions`)
 
   // Load outline image
   const outlineImage = await loadOutlineImage(imgUrl)

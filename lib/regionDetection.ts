@@ -3,26 +3,13 @@
  * Identifies and maps distinct bounded regions in an image
  */
 
-import { getPixelColor, type RGB, type Point } from "./floodFill";
+import { getPixelColor, type Point } from "./floodFill";
 import { isBoundaryPixel } from "./canvasUtils";
-
-export interface Region {
-  id: number;
-  pixels: Point[];
-  boundingBox: {
-    minX: number;
-    maxX: number;
-    minY: number;
-    maxY: number;
-  };
-  area: number;
-  averageColor: RGB;
-}
 
 export interface RegionMap {
   width: number;
   height: number;
-  regions: Region[];
+  regionCount: number;
   // 2D array: regionMap[y][x] = region ID (or -1 for boundary, 0 for unassigned)
   pixelToRegion: number[][];
 }
@@ -56,7 +43,7 @@ export function detectRegions(
   }
 
   // Find all regions using flood fill
-  const regions: Region[] = [];
+  let regionCount = 0;
   let currentRegionId = 1;
 
   for (let y = 0; y < height; y++) {
@@ -75,12 +62,7 @@ export function detectRegions(
 
       // Only keep regions above minimum size
       if (regionPixels.length >= minRegionSize) {
-        const region = createRegion(
-          currentRegionId,
-          regionPixels,
-          imageData
-        );
-        regions.push(region);
+        regionCount++;
         currentRegionId++;
       } else {
         // Mark small regions as boundary to ignore them
@@ -94,7 +76,7 @@ export function detectRegions(
   return {
     width,
     height,
-    regions,
+    regionCount,
     pixelToRegion,
   };
 }
@@ -140,51 +122,6 @@ function floodFillRegion(
   }
 
   return pixels;
-}
-
-/**
- * Create region metadata from pixels
- */
-function createRegion(
-  id: number,
-  pixels: Point[],
-  imageData: ImageData
-): Region {
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minY = Infinity;
-  let maxY = -Infinity;
-  let totalR = 0;
-  let totalG = 0;
-  let totalB = 0;
-
-  for (const pixel of pixels) {
-    minX = Math.min(minX, pixel.x);
-    maxX = Math.max(maxX, pixel.x);
-    minY = Math.min(minY, pixel.y);
-    maxY = Math.max(maxY, pixel.y);
-
-    const color = getPixelColor(imageData, pixel.x, pixel.y);
-    totalR += color.r;
-    totalG += color.g;
-    totalB += color.b;
-  }
-
-  const area = pixels.length;
-  const averageColor: RGB = {
-    r: Math.round(totalR / area),
-    g: Math.round(totalG / area),
-    b: Math.round(totalB / area),
-    a: 255,
-  };
-
-  return {
-    id,
-    pixels,
-    boundingBox: { minX, maxX, minY, maxY },
-    area,
-    averageColor,
-  };
 }
 
 /**
@@ -266,65 +203,4 @@ export function getRegionAtWithTolerance(
   }
 
   return regionId;
-}
-
-/**
- * Get region by ID
- */
-export function getRegionById(
-  regionMap: RegionMap,
-  regionId: number
-): Region | null {
-  return regionMap.regions.find((r) => r.id === regionId) || null;
-}
-
-/**
- * Check if two points are in the same region
- */
-export function areInSameRegion(
-  regionMap: RegionMap,
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number
-): boolean {
-  const region1 = getRegionAt(regionMap, x1, y1);
-  const region2 = getRegionAt(regionMap, x2, y2);
-  return region1 > 0 && region1 === region2;
-}
-
-/**
- * Get statistics about regions
- */
-export function getRegionStats(regionMap: RegionMap) {
-  const totalRegions = regionMap.regions.length;
-  const totalPixels = regionMap.width * regionMap.height;
-  const boundaryPixels = regionMap.pixelToRegion
-    .flat()
-    .filter((id) => id === -1).length;
-  const assignedPixels = regionMap.regions.reduce(
-    (sum, region) => sum + region.area,
-    0
-  );
-
-  const largestRegion = regionMap.regions.reduce(
-    (max, region) => (region.area > max.area ? region : max),
-    regionMap.regions[0] || { area: 0 }
-  );
-
-  const smallestRegion = regionMap.regions.reduce(
-    (min, region) => (region.area < min.area ? region : min),
-    regionMap.regions[0] || { area: Infinity }
-  );
-
-  return {
-    totalRegions,
-    totalPixels,
-    boundaryPixels,
-    assignedPixels,
-    unassignedPixels: totalPixels - assignedPixels - boundaryPixels,
-    largestRegion: largestRegion.area,
-    smallestRegion: smallestRegion.area,
-    averageRegionSize: Math.round(assignedPixels / totalRegions),
-  };
 }
