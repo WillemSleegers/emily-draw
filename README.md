@@ -1,101 +1,110 @@
 # Emily Draw
 
-A digital coloring book application with "stay within the lines" functionality, built with Next.js and HTML Canvas.
+A digital coloring book application designed for young children (around 3 years old) with intelligent "stay within the lines" functionality, built with Next.js and HTML Canvas.
 
-## Features
+## Key Features
 
-- **Region-locked drawing**: Click in a region to start coloring, and your brush automatically stays within that bounded area
-- **Smart boundary detection**: Draws right up to the edges without crossing into other regions
-- **Performance optimized**: Fast path for normal drawing, segmented rendering for boundary crossings
-- **Two-layer canvas architecture**: Drawing layer underneath, outline layer on top for always-visible lines
+- **Layer-based drawing architecture**: Each colorable region is a separate OffscreenCanvas with native clipping
+- **Stay-within-lines toggle**: Switch between region-locked drawing and free drawing modes
+- **Edge gap elimination**: Global pointer tracking ensures strokes reach canvas edges with no gaps
+- **Child-friendly UI**: Large square buttons with visual-only indicators (no text labels)
+- **Touch-optimized**: Designed for iPad and touchscreen devices
+- **Multiple brush controls**: Three sizes (small, medium, large) and two types (solid, soft blur effect)
+- **Simple color picker**: Easy color selection interface
 
 ## Technical Implementation
 
+### Innovations
+
+#### 1. **Layer-Based Architecture** (`lib/layerGeneration.ts`)
+
+Instead of checking region boundaries on every pointer move, we pre-generate separate drawable layers:
+
+- **Region Detection**: Scan image to identify bounded regions (flood fill algorithm)
+- **Layer Generation**: Create one OffscreenCanvas per region with a clipping mask
+- **Native Clipping**: Draw freely on each layer - browser handles boundary enforcement
+- **Compositing**: Merge all layers onto display canvas
+
+**Benefits:**
+- ✅ Eliminated ~100 lines of complex path interpolation code
+- ✅ No region checking during drawing (performance win)
+- ✅ Pixel-perfect boundaries via native canvas clipping
+- ✅ Easy to add per-region features (undo, clear, opacity)
+
+#### 2. **Edge Gap Elimination** (`components/Canvas.tsx`)
+
+**Problem**: When pointer moves quickly, browser events fire at discrete intervals. By the time `pointerenter` detects entry, pointer may already be pixels inside canvas - creating gaps.
+
+**Solution**: Global pointer tracking
+- Track pointer position across entire page (window-level listener)
+- On canvas entry: draw from last global position → entry point
+- On canvas exit: draw from last point → exit coordinates
+- Line naturally crosses canvas edge with no gaps
+
+**Result**: Smooth, continuous strokes even with fast mouse movements
+
+#### 3. **Stay-Within-Lines Toggle**
+
+Two drawing modes with simple visual toggle:
+- **Region-locked mode** (Shapes icon): Layer-based drawing with clipping
+- **Free drawing mode** (Pencil icon): Draw anywhere on canvas
+
+Allows children to color precisely within lines or experiment freely.
+
 ### Canvas Architecture
 
-The application uses a two-layer canvas system:
+Three-layer visual system:
 
-1. **Drawing Canvas (bottom)**: Captures user's coloring with a transparent background
-2. **Outline Canvas (top)**: Displays the image outline with `pointer-events: none` to allow mouse events to pass through
+1. **Drawing Layers** (OffscreenCanvas array): One per region, composited to display canvas
+2. **Display Canvas** (visible): Shows merged result of all drawing layers
+3. **Outline Overlay** (top): Displays outline image with `pointer-events: none`
 
-Both canvases are absolutely positioned and precisely sized to ensure pixel-perfect alignment.
+All layers precisely sized and absolutely positioned for pixel-perfect alignment.
 
-### Region Detection
+### Region Detection (`lib/regionDetection.ts`)
 
-**Image Loading** (`lib/imageLoader.ts`):
-- Loads the PNG image with a white background fill (handles transparency)
-- Extracts raw pixel data using an offscreen canvas
-- Returns `ImageData` for region analysis
+- Identifies boundaries: dark pixels (brightness < 128)
+- Creates 2D map: `pixelToRegion[y][x]` (-1=boundary, 0=empty, >0=region ID)
+- Uses flood fill to find connected non-boundary areas
+- Filters noise: removes regions < 10 pixels
+- Generates clipping masks for each valid region
 
-**Region Mapping** (`lib/regionDetection.ts`):
-- Scans all pixels to identify boundaries (dark pixels with brightness < 128)
-- Creates a 2D lookup map: `pixelToRegion[y][x]`
-  - `-1` = boundary pixel (black line)
-  - `0` = unassigned/empty space
-  - `>0` = region ID
-- Uses flood fill algorithm to identify connected non-boundary areas
-- Filters out small regions (< 100 pixels) as noise
-- Each region stores: ID, pixel coordinates, bounding box, area, and average color
+### Drawing System
 
-**Boundary Tolerance** (`getRegionAtWithTolerance`):
-- When checking if a pixel belongs to a region, also checks nearby pixels (within tolerance radius)
-- If a boundary pixel has the target region nearby, treats it as part of that region
-- Allows drawing slightly onto thick boundary lines without color showing on the other side
-- Default tolerance: 4 pixels
+**Stay-Within-Lines Mode:**
+1. Click detects which layer (region) via mask lookup
+2. Draw strokes on temporary canvas
+3. Apply region mask via `destination-in` compositing
+4. Merge masked stroke onto layer
+5. Composite all layers to display
 
-### Drawing Algorithm
-
-**Region Locking** (`handleMouseDown`):
-- Detects which region was clicked
-- Locks drawing to that region ID for the entire stroke
-- Rejects clicks on boundaries or empty space
-
-**Smart Stroke Rendering** (`handleMouseMove`):
-
-The drawing system uses an adaptive dual-path approach:
-
-**Fast Path** (movements < 10 pixels):
-- Single region check at the endpoint
-- Direct line drawing with `ctx.stroke()`
-- Minimal computational overhead
-- Handles ~90% of normal drawing strokes
-
-**Segmented Path** (movements ≥ 10 pixels):
-- Interpolates points along the stroke path (every ~8 pixels)
-- Checks each interpolated point against the locked region (with 4px tolerance)
-- Identifies continuous valid segments within the region
-- Draws only the valid segments, automatically stopping at boundaries
-- If the stroke crosses back into the region, starts a new segment from the re-entry point
-
-**Drawing Style**:
-- Line width: 20px
-- Line cap: round
-- Line join: round
-- Color: Configurable (currently green for testing)
-
-### Performance Optimizations
-
-1. **Fast path for small movements**: Skips interpolation when movement is < 10px
-2. **Coarse sampling for long strokes**: Samples every 8 pixels instead of every pixel
-3. **Boundary tolerance**: Reduces false boundary triggers near edges
-4. **Early returns**: Exits quickly when not drawing or outside locked region
-5. **Integer coordinate rounding**: Ensures valid array access in region map
+**Free Drawing Mode:**
+- Direct drawing on display canvas
+- No region restrictions or clipping
 
 ### File Structure
 
 ```
 lib/
-  ├── regionDetection.ts    # Region identification and lookup
+  ├── layerGeneration.ts     # Generate drawable layers from regions
+  ├── regionDetection.ts     # Region identification and mapping
   ├── imageLoader.ts         # Image data extraction
-  ├── canvasUtils.ts         # Coordinate conversion, color utilities
-  └── floodFill.ts          # Flood fill algorithm (for region detection)
+  ├── processImage.ts        # Image processing pipeline
+  ├── canvasUtils.ts         # Coordinate conversion, utilities
+  └── floodFill.ts          # Flood fill algorithm
 
 components/
-  ├── Canvas.tsx            # Main drawing component
-  └── DebugOverlay.tsx      # Region statistics display
+  ├── Canvas.tsx             # Main drawing canvas with layer system
+  ├── DrawingScreen.tsx      # Main drawing interface layout
+  ├── OutlineOverlay.tsx     # Outline image overlay
+  ├── ColorPicker.tsx        # Color selection component
+  ├── BrushSettings.tsx      # Brush size/type/mode controls
+  └── ui/                    # shadcn/ui components
 
 app/
-  └── page.tsx              # Home page
+  ├── layout.tsx             # Root layout with Geist font
+  ├── page.tsx               # Home page with image selection
+  └── globals.css            # Global styles with Tailwind v4
 ```
 
 ## Getting Started
@@ -118,9 +127,12 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 ## Future Enhancements
 
-- Color picker UI
-- Multiple brush sizes
-- Undo/redo functionality
-- Clear/reset button
+- ✅ ~~Color picker UI~~ (Completed)
+- ✅ ~~Multiple brush sizes~~ (Completed)
+- ✅ ~~Stay-within-lines toggle~~ (Completed)
+- Per-region undo/redo functionality
+- Clear individual regions
+- Region opacity controls
 - Save/export artwork
-- Multiple images to color
+- More coloring book images
+- Animations and sound effects for children
