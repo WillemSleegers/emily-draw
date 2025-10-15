@@ -1,11 +1,12 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import Canvas from "@/components/Canvas"
 import OutlineOverlay from "@/components/OutlineOverlay"
 import ColorPicker from "@/components/ColorPicker"
 import BrushSettings, { type BrushType, type BrushSize, getBrushSizePixels } from "@/components/BrushSettings"
 import { ProcessedImageData } from "@/lib/processImage"
+import { generateLayers } from "@/lib/layerGeneration"
 import { ArrowBigLeftIcon } from "lucide-react"
 import { Button } from "./ui/button"
 
@@ -21,7 +22,13 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
   const [fillColor, setFillColor] = useState("#FF0000")
   const [brushSize, setBrushSize] = useState<BrushSize>("medium")
   const [brushType, setBrushType] = useState<BrushType>("solid")
+  const [stayWithinLines, setStayWithinLines] = useState(true)
   const { regionMap, outlineImage } = data
+
+  // Generate drawable layers from region map (memoized)
+  const layers = useMemo(() => {
+    return generateLayers(regionMap)
+  }, [regionMap])
 
   return (
     <div className="flex flex-row gap-4 h-full overflow-hidden touch-none">
@@ -37,6 +44,8 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
           onSizeChange={setBrushSize}
           brushType={brushType}
           onBrushTypeChange={setBrushType}
+          stayWithinLines={stayWithinLines}
+          onStayWithinLinesChange={setStayWithinLines}
         />
       </div>
 
@@ -45,11 +54,12 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
         <div className="relative h-full aspect-square max-w-full border-4 border-gray-300 dark:border-gray-700 rounded-2xl shadow-2xl overflow-hidden">
           {/* Drawing canvas (bottom layer) */}
           <Canvas
-            regionMap={regionMap}
+            layers={layers}
             size={CANVAS_SIZE}
             fillColor={fillColor}
             brushSize={getBrushSizePixels(brushSize)}
             brushType={brushType}
+            stayWithinLines={stayWithinLines}
           />
           {/* Outline overlay (top layer) */}
           {outlineImage && (
