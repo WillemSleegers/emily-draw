@@ -25,6 +25,7 @@ export default function Canvas({ layers, size, fillColor, brushSize, brushType, 
   const [isDrawing, setIsDrawing] = useState(false)
   const [activeLayer, setActiveLayer] = useState<DrawingLayer | null>(null)
   const lastPointRef = useRef<{ x: number; y: number } | null>(null)
+  const hasMovedRef = useRef(false)
 
   // Global pointer position tracking (for edge gap fix)
   const lastGlobalPositionRef = useRef<{ x: number; y: number } | null>(null)
@@ -109,6 +110,7 @@ export default function Canvas({ layers, size, fillColor, brushSize, brushType, 
 
     setIsDrawing(true)
     lastPointRef.current = coords
+    hasMovedRef.current = false
   }
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -144,6 +146,7 @@ export default function Canvas({ layers, size, fillColor, brushSize, brushType, 
       )
       const drawEnd = performance.now()
       performanceMetrics.current.drawStrokeTime += (drawEnd - drawStart)
+      hasMovedRef.current = true
     } else if (!stayWithinLines) {
       // Free drawing on all layers
       const drawStart = performance.now()
@@ -156,6 +159,7 @@ export default function Canvas({ layers, size, fillColor, brushSize, brushType, 
       })
       const drawEnd = performance.now()
       performanceMetrics.current.drawStrokeTime += (drawEnd - drawStart)
+      hasMovedRef.current = true
     }
 
     const moveEnd = performance.now()
@@ -187,9 +191,58 @@ export default function Canvas({ layers, size, fillColor, brushSize, brushType, 
   }
 
   const handlePointerUp = () => {
+    // Check if this was a click without movement (draw a circle)
+    const lastPoint = lastPointRef.current
+    if (lastPoint && isDrawing && !hasMovedRef.current) {
+      // Draw a circle at the click point
+      if (stayWithinLines && activeLayer) {
+        // Region-locked: draw circle on active layer
+        drawStrokeWithClipping(
+          activeLayer.canvas,
+          activeLayer.ctx,
+          activeLayer.mask,
+          (ctx) => {
+            ctx.fillStyle = fillColor
+            ctx.globalAlpha = 1.0
+
+            // Apply shadow for soft brush
+            if (brushType === "soft") {
+              ctx.shadowBlur = brushSize * 0.5
+              ctx.shadowColor = fillColor
+            } else {
+              ctx.shadowBlur = 0
+            }
+
+            ctx.beginPath()
+            ctx.arc(lastPoint.x, lastPoint.y, brushSize / 2, 0, Math.PI * 2)
+            ctx.fill()
+          }
+        )
+      } else if (!stayWithinLines) {
+        // Free drawing: draw circle on all layers
+        layers.forEach(layer => {
+          layer.ctx.fillStyle = fillColor
+          layer.ctx.globalAlpha = 1.0
+
+          // Apply shadow for soft brush
+          if (brushType === "soft") {
+            layer.ctx.shadowBlur = brushSize * 0.5
+            layer.ctx.shadowColor = fillColor
+          } else {
+            layer.ctx.shadowBlur = 0
+          }
+
+          layer.ctx.beginPath()
+          layer.ctx.arc(lastPoint.x, lastPoint.y, brushSize / 2, 0, Math.PI * 2)
+          layer.ctx.fill()
+        })
+      }
+    }
+
     setIsDrawing(false)
     setActiveLayer(null)
     lastPointRef.current = null
+    hasMovedRef.current = false
   }
 
   const handlePointerLeave = (event: React.PointerEvent<HTMLDivElement>) => {

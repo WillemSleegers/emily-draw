@@ -4,7 +4,11 @@ import { useState, useMemo } from "react"
 import Canvas from "@/components/Canvas"
 import OutlineOverlay from "@/components/OutlineOverlay"
 import ColorPicker from "@/components/ColorPicker"
-import BrushSettings, { type BrushType, type BrushSize, getBrushSizePixels } from "@/components/BrushSettings"
+import BrushSettings, {
+  type BrushType,
+  type BrushSize,
+  getBrushSizePixels,
+} from "@/components/BrushSettings"
 import { ProcessedImageData } from "@/lib/processImage"
 import { generateLayers } from "@/lib/layerGeneration"
 import { ArrowBigLeftIcon } from "lucide-react"
@@ -35,8 +39,12 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
       {/* Left column: Controls */}
       <div className="flex flex-col gap-4 flex-shrink-0 overflow-y-auto touch-pan-y">
         <div className="p-4 bg-white dark:bg-gray-800 rounded-2xl border-4 border-gray-300 dark:border-gray-700 shadow-xl">
-          <Button variant="outline" className="size-12" onClick={onBack}>
-            <ArrowBigLeftIcon />
+          <Button
+            variant="outline"
+            onClick={onBack}
+            className="aspect-square rounded-xl border-4 border-gray-300 dark:border-gray-600 hover:border-blue-400 h-auto w-auto"
+          >
+            <ArrowBigLeftIcon className="size-8" />
           </Button>
         </div>
         <BrushSettings

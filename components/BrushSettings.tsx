@@ -15,9 +15,9 @@ interface BrushSettingsProps {
 }
 
 const BRUSH_SIZES = {
-  small: 15,
+  small: 10,
   medium: 25,
-  large: 40,
+  large: 50,
 }
 
 export default function BrushSettings({

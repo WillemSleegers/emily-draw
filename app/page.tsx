@@ -6,14 +6,26 @@ import DrawingScreen from "@/components/DrawingScreen"
 import LoadingScreen from "@/components/LoadingScreen"
 import { processImage, type ProcessedImageData } from "@/lib/processImage"
 
+import atomImage from "@/assets/images/atom.png"
+import balloonImage from "@/assets/images/balloon.png"
+import candyCaneImage from "@/assets/images/candy-cane.png"
 import circleImage from "@/assets/images/circle.png"
+import icecreamImage from "@/assets/images/icecream.png"
+import puzzleImage from "@/assets/images/puzzle.png"
 import squareImage from "@/assets/images/square.png"
+import starImage from "@/assets/images/star.png"
 import triangleImage from "@/assets/images/triangle.png"
 
 const IMAGES = [
   { id: 1, name: "Circle", src: circleImage },
   { id: 2, name: "Square", src: squareImage },
   { id: 3, name: "Triangle", src: triangleImage },
+  { id: 4, name: "Star", src: starImage },
+  { id: 5, name: "Balloon", src: balloonImage },
+  { id: 6, name: "Ice Cream", src: icecreamImage },
+  { id: 7, name: "Candy Cane", src: candyCaneImage },
+  { id: 8, name: "Puzzle", src: puzzleImage },
+  { id: 9, name: "Atom", src: atomImage },
 ]
 
 export default function Home() {
