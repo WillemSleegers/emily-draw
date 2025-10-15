@@ -7,30 +7,22 @@ import type { RegionMap } from "./regionDetection";
 
 export interface DrawingLayer {
   id: number;
-  canvas: OffscreenCanvas;
-  ctx: OffscreenCanvasRenderingContext2D;
+  canvas: HTMLCanvasElement;
+  ctx: CanvasRenderingContext2D;
   mask: ImageData;
 }
 
+
 /**
- * Generate drawable layers from a region map
+ * Generate layer metadata from a region map
  * Each layer represents one fillable region with a clipping mask
  */
 export function generateLayers(regionMap: RegionMap): DrawingLayer[] {
   const layers: DrawingLayer[] = [];
   const { width, height, regionCount, pixelToRegion } = regionMap;
 
-  // Create a layer for each region
+  // Create layer metadata for each region
   for (let regionId = 1; regionId <= regionCount; regionId++) {
-    // Create offscreen canvas for this layer
-    const canvas = new OffscreenCanvas(width, height);
-    const ctx = canvas.getContext("2d");
-
-    if (!ctx) {
-      console.error(`Failed to get context for region ${regionId}`);
-      continue;
-    }
-
     // Create mask ImageData for this region
     const mask = new ImageData(width, height);
 
@@ -56,6 +48,20 @@ export function generateLayers(regionMap: RegionMap): DrawingLayer[] {
       }
     }
 
+    // Create HTML canvas element for this layer
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d', { willReadFrequently: false });
+
+    if (!ctx) {
+      throw new Error(`Failed to get 2D context for layer ${regionId}`);
+    }
+
+    // Put the white mask pixels on the canvas ONCE during initialization
+    // This allows us to use source-atop for clipping without temp canvases
+    ctx.putImageData(mask, 0, 0);
+
     layers.push({
       id: regionId,
       canvas,
@@ -69,42 +75,25 @@ export function generateLayers(regionMap: RegionMap): DrawingLayer[] {
 
 /**
  * Draw a stroke on a layer with clipping applied
- * Uses a temporary canvas to apply the mask without affecting previous content
+ * Uses source-atop to only draw where the mask pixels exist (no temp canvas needed!)
  */
 export function drawStrokeWithClipping(
-  layerCanvas: OffscreenCanvas,
-  layerCtx: OffscreenCanvasRenderingContext2D,
+  layerCanvas: HTMLCanvasElement,
+  layerCtx: CanvasRenderingContext2D,
   mask: ImageData,
-  strokeCallback: (ctx: OffscreenCanvasRenderingContext2D) => void
+  strokeCallback: (ctx: CanvasRenderingContext2D) => void
 ): void {
-  const width = layerCanvas.width;
-  const height = layerCanvas.height;
+  // Save the current state
+  layerCtx.save();
 
-  // Create temporary canvas for this stroke
-  const tempCanvas = new OffscreenCanvas(width, height);
-  const tempCtx = tempCanvas.getContext("2d");
+  // Use source-atop: only draws where existing pixels are opaque (where the mask is)
+  layerCtx.globalCompositeOperation = "source-atop";
 
-  if (!tempCtx) return;
+  // Draw the stroke - it will automatically clip to the mask pixels
+  strokeCallback(layerCtx);
 
-  // Draw the stroke on the temporary canvas
-  strokeCallback(tempCtx);
-
-  // Create a separate canvas for the mask
-  const maskCanvas = new OffscreenCanvas(width, height);
-  const maskCtx = maskCanvas.getContext("2d");
-
-  if (!maskCtx) return;
-
-  // Put the mask on the mask canvas
-  maskCtx.putImageData(mask, 0, 0);
-
-  // Apply the mask to the stroke (keep only parts within the region)
-  tempCtx.globalCompositeOperation = "destination-in";
-  tempCtx.drawImage(maskCanvas, 0, 0);
-
-  // Composite the masked stroke onto the layer canvas
-  layerCtx.globalCompositeOperation = "source-over";
-  layerCtx.drawImage(tempCanvas, 0, 0);
+  // Restore the state
+  layerCtx.restore();
 }
 
 /**
