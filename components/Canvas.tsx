@@ -27,6 +27,9 @@ export default function Canvas({ layers, size, fillColor, brushSize, brushType, 
   const [activeLayer, setActiveLayer] = useState<DrawingLayer | null>(null)
   const lastPointRef = useRef<{ x: number; y: number } | null>(null)
 
+  // Global pointer position tracking (for edge gap fix)
+  const lastGlobalPositionRef = useRef<{ x: number; y: number } | null>(null)
+
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -41,6 +44,21 @@ export default function Canvas({ layers, size, fillColor, brushSize, brushType, 
       compositeLayers(ctx, layers, size, size)
     }
   }, [size, layers])
+
+  // Track global pointer position to fix edge gaps on fast entry
+  useEffect(() => {
+    const handleGlobalPointerMove = (event: PointerEvent) => {
+      const canvas = canvasRef.current
+      if (!canvas) return
+
+      // Convert global coordinates to canvas coordinates
+      const coords = getCanvasCoordinates(canvas, event)
+      lastGlobalPositionRef.current = coords
+    }
+
+    window.addEventListener('pointermove', handleGlobalPointerMove)
+    return () => window.removeEventListener('pointermove', handleGlobalPointerMove)
+  }, [])
 
   // Apply brush settings to a context
   const applyBrushSettings = (
@@ -137,6 +155,57 @@ export default function Canvas({ layers, size, fillColor, brushSize, brushType, 
     lastPointRef.current = null
   }
 
+  const handlePointerLeave = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current
+    if (!canvas || !isDrawing) {
+      // Not drawing, just treat it as pointer up
+      handlePointerUp()
+      return
+    }
+
+    // Get exit coordinates
+    const exitCoords = getCanvasCoordinates(canvas, event)
+    const lastPoint = lastPointRef.current
+
+    // Draw final stroke to exit point if we have a last point
+    if (lastPoint && (lastPoint.x !== exitCoords.x || lastPoint.y !== exitCoords.y)) {
+      if (stayWithinLines && activeLayer) {
+        // Region-locked drawing with clipping
+        drawStrokeWithClipping(
+          activeLayer.canvas,
+          activeLayer.ctx,
+          activeLayer.mask,
+          (ctx) => {
+            applyBrushSettings(ctx)
+            ctx.beginPath()
+            ctx.moveTo(lastPoint.x, lastPoint.y)
+            ctx.lineTo(exitCoords.x, exitCoords.y)
+            ctx.stroke()
+          }
+        )
+
+        // Update display canvas
+        const displayCtx = canvas.getContext("2d")
+        if (displayCtx) {
+          compositeLayers(displayCtx, layers, size, size)
+        }
+      } else if (!stayWithinLines) {
+        // Free drawing directly on display canvas
+        const displayCtx = canvas.getContext("2d")
+        if (displayCtx) {
+          applyBrushSettings(displayCtx)
+          displayCtx.beginPath()
+          displayCtx.moveTo(lastPoint.x, lastPoint.y)
+          displayCtx.lineTo(exitCoords.x, exitCoords.y)
+          displayCtx.stroke()
+        }
+      }
+    }
+
+    // Stop drawing
+    handlePointerUp()
+  }
+
   const handlePointerEnter = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -150,9 +219,45 @@ export default function Canvas({ layers, size, fillColor, brushSize, brushType, 
         const layer = findLayerAtPoint(layers, coords.x, coords.y)
         if (!layer) return
         setActiveLayer(layer)
+
+        // If we have a previous global position, draw from there to fix edge gaps
+        const globalPos = lastGlobalPositionRef.current
+        if (globalPos && (globalPos.x !== coords.x || globalPos.y !== coords.y)) {
+          drawStrokeWithClipping(
+            layer.canvas,
+            layer.ctx,
+            layer.mask,
+            (ctx) => {
+              applyBrushSettings(ctx)
+              ctx.beginPath()
+              ctx.moveTo(globalPos.x, globalPos.y)
+              ctx.lineTo(coords.x, coords.y)
+              ctx.stroke()
+            }
+          )
+
+          // Update display canvas
+          const displayCtx = canvas.getContext("2d")
+          if (displayCtx) {
+            compositeLayers(displayCtx, layers, size, size)
+          }
+        }
       } else {
         // Free drawing: no layer restrictions
         setActiveLayer(null)
+
+        // If we have a previous global position, draw from there to fix edge gaps
+        const globalPos = lastGlobalPositionRef.current
+        if (globalPos && (globalPos.x !== coords.x || globalPos.y !== coords.y)) {
+          const displayCtx = canvas.getContext("2d")
+          if (displayCtx) {
+            applyBrushSettings(displayCtx)
+            displayCtx.beginPath()
+            displayCtx.moveTo(globalPos.x, globalPos.y)
+            displayCtx.lineTo(coords.x, coords.y)
+            displayCtx.stroke()
+          }
+        }
       }
 
       // Resume drawing
@@ -170,7 +275,7 @@ export default function Canvas({ layers, size, fillColor, brushSize, brushType, 
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
-      onPointerLeave={handlePointerUp}
+      onPointerLeave={handlePointerLeave}
       onPointerEnter={handlePointerEnter}
     />
   )
