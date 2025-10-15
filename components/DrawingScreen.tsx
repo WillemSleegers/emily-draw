@@ -63,7 +63,6 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
           {/* Drawing canvas (bottom layer) */}
           <Canvas
             layers={layers}
-            size={CANVAS_SIZE}
             fillColor={fillColor}
             brushSize={getBrushSizePixels(brushSize)}
             brushType={brushType}

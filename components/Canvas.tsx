@@ -11,14 +11,13 @@ import type { BrushType } from "./BrushSettings"
 
 interface CanvasProps {
   layers: DrawingLayer[]
-  size: number
   fillColor: string
   brushSize: number
   brushType: BrushType
   stayWithinLines: boolean
 }
 
-export default function Canvas({ layers, size, fillColor, brushSize, brushType, stayWithinLines }: CanvasProps) {
+export default function Canvas({ layers, fillColor, brushSize, brushType, stayWithinLines }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
 
   // Drawing state
