@@ -71,9 +71,13 @@ export default function Canvas({
     const handleGlobalPointerMove = (event: PointerEvent) => {
       if (layers.length === 0) return
 
-      // Convert global coordinates to canvas coordinates
-      const coords = getCanvasCoordinates(layers[0].canvas, event)
-      lastGlobalPositionRef.current = coords
+      // Only track position when actively drawing (button is held down)
+      // This prevents capturing positions from UI interactions like color picker clicks
+      if (event.buttons === 1) {
+        // Convert global coordinates to canvas coordinates
+        const coords = getCanvasCoordinates(layers[0].canvas, event)
+        lastGlobalPositionRef.current = coords
+      }
     }
 
     window.addEventListener("pointermove", handleGlobalPointerMove)
