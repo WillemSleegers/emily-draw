@@ -71,8 +71,8 @@ export default function ColorPicker({
   onColorChange,
 }: ColorPickerProps) {
   return (
-    <div className="h-full overflow-y-auto overflow-x-hidden py-4 px-3 bg-white dark:bg-gray-800 rounded-2xl border-4 border-gray-300 dark:border-gray-700 ">
-      <div className="flex flex-col gap-4 items-center">
+    <div className="landscape:h-full py-4 px-4 bg-white dark:bg-gray-800 rounded-2xl border-4 border-gray-300 dark:border-gray-700 portrait:overflow-x-auto portrait:overflow-y-hidden landscape:overflow-y-auto landscape:overflow-x-hidden">
+      <div className="flex portrait:flex-row landscape:flex-col gap-4 items-center">
         {COLORS.map((color) => {
           const isSelected = selectedColor === color.value
           return (

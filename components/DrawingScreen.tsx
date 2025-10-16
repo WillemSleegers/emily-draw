@@ -26,6 +26,7 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
   const [fillColor, setFillColor] = useState("#FF0000")
   const [brushSize, setBrushSize] = useState<BrushSize>("medium")
   const [brushType, setBrushType] = useState<BrushType>("solid")
+  const [isEraser, setIsEraser] = useState(false)
   const [stayWithinLines, setStayWithinLines] = useState(true)
   const { regionMap, outlineImage } = data
 
@@ -35,48 +36,50 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
   }, [regionMap])
 
   return (
-    <div className="flex flex-row gap-4 h-full overflow-hidden touch-none">
-      {/* Left column: Controls */}
-      <div className="flex flex-col gap-4 flex-shrink-0 overflow-y-auto touch-pan-y">
-        <div className="p-4 bg-white dark:bg-gray-800 rounded-2xl border-4 border-gray-300 dark:border-gray-700 shadow-xl">
-          <Button
-            variant="outline"
-            onClick={onBack}
-            className="aspect-square rounded-xl border-4 border-gray-300 dark:border-gray-600 hover:border-blue-400 h-auto w-auto"
-          >
-            <ArrowBigLeftIcon className="size-8" />
-          </Button>
-        </div>
+    <div className="flex portrait:flex-col landscape:flex-row gap-4 h-full w-full touch-none justify-between">
+      {/* Controls - Left column in landscape, top row in portrait */}
+      <div className="grow-1 w-fit landscape:max-w-50 portrait:max-w-full flex portrait:flex-row landscape:flex-col landscape:flex-wrap landscape:h-full portrait:justify-between gap-4 portrait:overflow-x-auto  portrait:touch-pan-x landscape:touch-pan-y portrait:w-full">
+        {/* Back button */}
+        <Button
+          variant="outline"
+          onClick={onBack}
+          className="flex-shrink-0 size-20 rounded-xl border-4 border-gray-300 dark:border-gray-600 hover:border-blue-400 bg-white dark:bg-gray-800"
+        >
+          <ArrowBigLeftIcon className="size-8" />
+        </Button>
+
+        {/* Brush settings */}
         <BrushSettings
           size={brushSize}
           onSizeChange={setBrushSize}
           brushType={brushType}
           onBrushTypeChange={setBrushType}
+          isEraser={isEraser}
+          onEraserChange={setIsEraser}
           stayWithinLines={stayWithinLines}
           onStayWithinLinesChange={setStayWithinLines}
         />
       </div>
 
-      {/* Middle column: Canvas */}
-      <div className="flex-1 flex items-center justify-center min-w-0 min-h-0 overflow-hidden">
-        <div className="relative h-full aspect-square max-w-full border-4 border-gray-300 dark:border-gray-700 rounded-2xl shadow-2xl overflow-hidden">
-          {/* Drawing canvas (bottom layer) */}
+      {/* Canvas (grows to fill available space) */}
+      <div className="aspect-square flex items-center justify-center overflow-hidden">
+        <div className="relative aspect-square portrait:w-full portrait:max-h-full landscape:h-full landscape:max-w-full border-4 border-gray-300 dark:border-gray-700 rounded-2xl overflow-hidden">
           <Canvas
             layers={layers}
             fillColor={fillColor}
             brushSize={getBrushSizePixels(brushSize)}
             brushType={brushType}
+            isEraser={isEraser}
             stayWithinLines={stayWithinLines}
           />
-          {/* Outline overlay (top layer) */}
           {outlineImage && (
             <OutlineOverlay outlineImage={outlineImage} size={CANVAS_SIZE} />
           )}
         </div>
       </div>
 
-      {/* Right column: Color picker */}
-      <div className="w-32 flex-shrink-0 overflow-y-auto touch-pan-y">
+      {/* Color picker - Right column in landscape, bottom row in portrait */}
+      <div className="flex-shrink-0 landscape:h-full">
         <ColorPicker selectedColor={fillColor} onColorChange={setFillColor} />
       </div>
     </div>

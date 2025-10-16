@@ -14,10 +14,18 @@ interface CanvasProps {
   fillColor: string
   brushSize: number
   brushType: BrushType
+  isEraser: boolean
   stayWithinLines: boolean
 }
 
-export default function Canvas({ layers, fillColor, brushSize, brushType, stayWithinLines }: CanvasProps) {
+export default function Canvas({
+  layers,
+  fillColor,
+  brushSize,
+  brushType,
+  isEraser,
+  stayWithinLines,
+}: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
 
   // Drawing state
@@ -35,7 +43,7 @@ export default function Canvas({ layers, fillColor, brushSize, brushType, stayWi
   const performanceMetrics = useRef({
     drawStrokeTime: 0,
     totalMoveTime: 0,
-    sampleCount: 0
+    sampleCount: 0,
   })
 
   // Mount layer canvases into the DOM
@@ -44,16 +52,16 @@ export default function Canvas({ layers, fillColor, brushSize, brushType, stayWi
     if (!container) return
 
     // Clear container
-    container.innerHTML = ''
+    container.innerHTML = ""
 
     // Append each layer canvas to the container
     layers.forEach((layer) => {
-      layer.canvas.style.position = 'absolute'
-      layer.canvas.style.top = '0'
-      layer.canvas.style.left = '0'
-      layer.canvas.style.width = '100%'
-      layer.canvas.style.height = '100%'
-      layer.canvas.style.pointerEvents = 'none'
+      layer.canvas.style.position = "absolute"
+      layer.canvas.style.top = "0"
+      layer.canvas.style.left = "0"
+      layer.canvas.style.width = "100%"
+      layer.canvas.style.height = "100%"
+      layer.canvas.style.pointerEvents = "none"
       container.appendChild(layer.canvas)
     })
   }, [layers])
@@ -68,21 +76,25 @@ export default function Canvas({ layers, fillColor, brushSize, brushType, stayWi
       lastGlobalPositionRef.current = coords
     }
 
-    window.addEventListener('pointermove', handleGlobalPointerMove)
-    return () => window.removeEventListener('pointermove', handleGlobalPointerMove)
+    window.addEventListener("pointermove", handleGlobalPointerMove)
+    return () =>
+      window.removeEventListener("pointermove", handleGlobalPointerMove)
   }, [layers])
 
   // Apply brush settings to a context
   const applyBrushSettings = (ctx: CanvasRenderingContext2D) => {
-    ctx.strokeStyle = fillColor
+    // Use white for eraser, otherwise use selected color
+    const color = isEraser ? "#FFFFFF" : fillColor
+
+    ctx.strokeStyle = color
     ctx.lineWidth = brushSize
     ctx.lineJoin = "round"
     ctx.lineCap = "round"
 
-    // Apply brush-specific settings
-    if (brushType === "soft") {
+    // Apply shadow for soft brush (but not for eraser)
+    if (brushType === "soft" && !isEraser) {
       ctx.shadowBlur = brushSize * 0.5
-      ctx.shadowColor = fillColor
+      ctx.shadowColor = color
     } else {
       ctx.globalAlpha = 1.0
       ctx.shadowBlur = 0
@@ -128,6 +140,14 @@ export default function Canvas({ layers, fillColor, brushSize, brushType, stayWi
       return
     }
 
+    // Calculate distance moved to detect actual movement vs. jitter
+    const dx = coords.x - lastPoint.x
+    const dy = coords.y - lastPoint.y
+    const distance = Math.sqrt(dx * dx + dy * dy)
+
+    // Only mark as moved if distance is significant (more than 2 pixels)
+    const significantMovement = distance > 2
+
     if (stayWithinLines && activeLayer) {
       // Region-locked drawing with clipping (layer canvas updates automatically in DOM)
       const drawStart = performance.now()
@@ -144,12 +164,12 @@ export default function Canvas({ layers, fillColor, brushSize, brushType, stayWi
         }
       )
       const drawEnd = performance.now()
-      performanceMetrics.current.drawStrokeTime += (drawEnd - drawStart)
-      hasMovedRef.current = true
+      performanceMetrics.current.drawStrokeTime += drawEnd - drawStart
+      if (significantMovement) hasMovedRef.current = true
     } else if (!stayWithinLines) {
       // Free drawing on all layers
       const drawStart = performance.now()
-      layers.forEach(layer => {
+      layers.forEach((layer) => {
         applyBrushSettings(layer.ctx)
         layer.ctx.beginPath()
         layer.ctx.moveTo(lastPoint.x, lastPoint.y)
@@ -157,12 +177,12 @@ export default function Canvas({ layers, fillColor, brushSize, brushType, stayWi
         layer.ctx.stroke()
       })
       const drawEnd = performance.now()
-      performanceMetrics.current.drawStrokeTime += (drawEnd - drawStart)
-      hasMovedRef.current = true
+      performanceMetrics.current.drawStrokeTime += drawEnd - drawStart
+      if (significantMovement) hasMovedRef.current = true
     }
 
     const moveEnd = performance.now()
-    performanceMetrics.current.totalMoveTime += (moveEnd - moveStart)
+    performanceMetrics.current.totalMoveTime += moveEnd - moveStart
     performanceMetrics.current.sampleCount++
 
     // Log FPS and metrics every second
@@ -171,10 +191,20 @@ export default function Canvas({ layers, fillColor, brushSize, brushType, stayWi
     if (now - lastFpsTimeRef.current >= 1000) {
       const fps = frameCountRef.current
       const metrics = performanceMetrics.current
-      const avgTotal = metrics.sampleCount > 0 ? metrics.totalMoveTime / metrics.sampleCount : 0
-      const avgDraw = metrics.sampleCount > 0 ? metrics.drawStrokeTime / metrics.sampleCount : 0
+      const avgTotal =
+        metrics.sampleCount > 0
+          ? metrics.totalMoveTime / metrics.sampleCount
+          : 0
+      const avgDraw =
+        metrics.sampleCount > 0
+          ? metrics.drawStrokeTime / metrics.sampleCount
+          : 0
 
-      console.log(`[PERF] FPS: ${fps} | Avg Total: ${avgTotal.toFixed(2)}ms | Avg Draw: ${avgDraw.toFixed(2)}ms`)
+      console.log(
+        `[PERF] FPS: ${fps} | Avg Total: ${avgTotal.toFixed(
+          2
+        )}ms | Avg Draw: ${avgDraw.toFixed(2)}ms`
+      )
 
       // Reset counters
       frameCountRef.current = 0
@@ -182,7 +212,7 @@ export default function Canvas({ layers, fillColor, brushSize, brushType, stayWi
       performanceMetrics.current = {
         drawStrokeTime: 0,
         totalMoveTime: 0,
-        sampleCount: 0
+        sampleCount: 0,
       }
     }
 
@@ -193,6 +223,9 @@ export default function Canvas({ layers, fillColor, brushSize, brushType, stayWi
     // Check if this was a click without movement (draw a circle)
     const lastPoint = lastPointRef.current
     if (lastPoint && isDrawing && !hasMovedRef.current) {
+      // Use white for eraser, otherwise use selected color
+      const color = isEraser ? "#FFFFFF" : fillColor
+
       // Draw a circle at the click point
       if (stayWithinLines && activeLayer) {
         // Region-locked: draw circle on active layer
@@ -201,13 +234,13 @@ export default function Canvas({ layers, fillColor, brushSize, brushType, stayWi
           activeLayer.ctx,
           activeLayer.mask,
           (ctx) => {
-            ctx.fillStyle = fillColor
+            ctx.fillStyle = color
             ctx.globalAlpha = 1.0
 
-            // Apply shadow for soft brush
-            if (brushType === "soft") {
+            // Apply shadow for soft brush (but not for eraser)
+            if (brushType === "soft" && !isEraser) {
               ctx.shadowBlur = brushSize * 0.5
-              ctx.shadowColor = fillColor
+              ctx.shadowColor = color
             } else {
               ctx.shadowBlur = 0
             }
@@ -219,14 +252,14 @@ export default function Canvas({ layers, fillColor, brushSize, brushType, stayWi
         )
       } else if (!stayWithinLines) {
         // Free drawing: draw circle on all layers
-        layers.forEach(layer => {
-          layer.ctx.fillStyle = fillColor
+        layers.forEach((layer) => {
+          layer.ctx.fillStyle = color
           layer.ctx.globalAlpha = 1.0
 
-          // Apply shadow for soft brush
-          if (brushType === "soft") {
+          // Apply shadow for soft brush (but not for eraser)
+          if (brushType === "soft" && !isEraser) {
             layer.ctx.shadowBlur = brushSize * 0.5
-            layer.ctx.shadowColor = fillColor
+            layer.ctx.shadowColor = color
           } else {
             layer.ctx.shadowBlur = 0
           }
@@ -241,6 +274,7 @@ export default function Canvas({ layers, fillColor, brushSize, brushType, stayWi
     setIsDrawing(false)
     setActiveLayer(null)
     lastPointRef.current = null
+    lastGlobalPositionRef.current = null
     hasMovedRef.current = false
   }
 
@@ -257,7 +291,10 @@ export default function Canvas({ layers, fillColor, brushSize, brushType, stayWi
     const lastPoint = lastPointRef.current
 
     // Draw final stroke to exit point if we have a last point
-    if (lastPoint && (lastPoint.x !== exitCoords.x || lastPoint.y !== exitCoords.y)) {
+    if (
+      lastPoint &&
+      (lastPoint.x !== exitCoords.x || lastPoint.y !== exitCoords.y)
+    ) {
       if (stayWithinLines && activeLayer) {
         // Region-locked drawing with clipping (canvas updates automatically in DOM)
         drawStrokeWithClipping(
@@ -274,7 +311,7 @@ export default function Canvas({ layers, fillColor, brushSize, brushType, stayWi
         )
       } else if (!stayWithinLines) {
         // Free drawing on all layers
-        layers.forEach(layer => {
+        layers.forEach((layer) => {
           applyBrushSettings(layer.ctx)
           layer.ctx.beginPath()
           layer.ctx.moveTo(lastPoint.x, lastPoint.y)
@@ -304,19 +341,17 @@ export default function Canvas({ layers, fillColor, brushSize, brushType, stayWi
 
         // If we have a previous global position, draw from there to fix edge gaps
         const globalPos = lastGlobalPositionRef.current
-        if (globalPos && (globalPos.x !== coords.x || globalPos.y !== coords.y)) {
-          drawStrokeWithClipping(
-            layer.canvas,
-            layer.ctx,
-            layer.mask,
-            (ctx) => {
-              applyBrushSettings(ctx)
-              ctx.beginPath()
-              ctx.moveTo(globalPos.x, globalPos.y)
-              ctx.lineTo(coords.x, coords.y)
-              ctx.stroke()
-            }
-          )
+        if (
+          globalPos &&
+          (globalPos.x !== coords.x || globalPos.y !== coords.y)
+        ) {
+          drawStrokeWithClipping(layer.canvas, layer.ctx, layer.mask, (ctx) => {
+            applyBrushSettings(ctx)
+            ctx.beginPath()
+            ctx.moveTo(globalPos.x, globalPos.y)
+            ctx.lineTo(coords.x, coords.y)
+            ctx.stroke()
+          })
         }
       } else {
         // Free drawing: no layer restrictions
@@ -324,8 +359,11 @@ export default function Canvas({ layers, fillColor, brushSize, brushType, stayWi
 
         // If we have a previous global position, draw from there to fix edge gaps
         const globalPos = lastGlobalPositionRef.current
-        if (globalPos && (globalPos.x !== coords.x || globalPos.y !== coords.y)) {
-          layers.forEach(layer => {
+        if (
+          globalPos &&
+          (globalPos.x !== coords.x || globalPos.y !== coords.y)
+        ) {
+          layers.forEach((layer) => {
             applyBrushSettings(layer.ctx)
             layer.ctx.beginPath()
             layer.ctx.moveTo(globalPos.x, globalPos.y)
@@ -344,7 +382,7 @@ export default function Canvas({ layers, fillColor, brushSize, brushType, stayWi
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-full touch-none"
+      className="aspect-square touch-none"
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
