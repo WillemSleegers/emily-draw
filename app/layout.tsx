@@ -34,7 +34,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased overflow-hidden`}
       >
-        <div className="h-dvh p-4 overflow-hidden">{children}</div>
+        <div className="h-dvh overflow-hidden">{children}</div>
       </body>
     </html>
   )

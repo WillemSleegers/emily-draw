@@ -36,7 +36,7 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
   }, [regionMap])
 
   return (
-    <div className="flex portrait:flex-col landscape:flex-row gap-4 h-full w-full touch-none landscape:justify-between">
+    <div className="flex portrait:flex-col landscape:flex-row gap-4 h-full w-full touch-none landscape:justify-between p-4 bg-gradient-to-br from-pink-100 via-purple-100 to-blue-100 dark:from-pink-950 dark:via-purple-950 dark:to-blue-950">
       {/* Back button - separate column in landscape, in row in portrait */}
       <div className="flex-shrink-0 portrait:hidden landscape:block">
         <Button
@@ -49,7 +49,7 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
       </div>
 
       {/* Controls row for portrait (includes back button + controls) */}
-      <div className="flex-shrink-0 portrait:flex landscape:hidden flex-row gap-4 w-full overflow-x-auto touch-pan-x">
+      <div className="flex-shrink-0 portrait:flex landscape:hidden flex-row gap-4 w-full overflow-x-auto touch-pan-x justify-between">
         <Button
           variant="outline"
           onClick={onBack}
