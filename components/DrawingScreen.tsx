@@ -36,10 +36,20 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
   }, [regionMap])
 
   return (
-    <div className="flex portrait:flex-col landscape:flex-row gap-4 h-full w-full touch-none justify-between">
-      {/* Controls - Left column in landscape, top row in portrait */}
-      <div className="grow-1 w-fit landscape:max-w-50 portrait:max-w-full flex portrait:flex-row landscape:flex-col landscape:flex-wrap landscape:h-full portrait:justify-between gap-4 portrait:overflow-x-auto  portrait:touch-pan-x landscape:touch-pan-y portrait:w-full">
-        {/* Back button */}
+    <div className="flex portrait:flex-col landscape:flex-row gap-4 h-full w-full touch-none landscape:justify-between">
+      {/* Back button - separate column in landscape, in row in portrait */}
+      <div className="flex-shrink-0 portrait:hidden landscape:block">
+        <Button
+          variant="outline"
+          onClick={onBack}
+          className="size-20 rounded-xl border-4 border-gray-300 dark:border-gray-600 hover:border-blue-400 bg-white dark:bg-gray-800"
+        >
+          <ArrowBigLeftIcon className="size-8" />
+        </Button>
+      </div>
+
+      {/* Controls row for portrait (includes back button + controls) */}
+      <div className="flex-shrink-0 portrait:flex landscape:hidden flex-row gap-4 w-full overflow-x-auto touch-pan-x">
         <Button
           variant="outline"
           onClick={onBack}
@@ -47,8 +57,20 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
         >
           <ArrowBigLeftIcon className="size-8" />
         </Button>
+        <BrushSettings
+          size={brushSize}
+          onSizeChange={setBrushSize}
+          brushType={brushType}
+          onBrushTypeChange={setBrushType}
+          isEraser={isEraser}
+          onEraserChange={setIsEraser}
+          stayWithinLines={stayWithinLines}
+          onStayWithinLinesChange={setStayWithinLines}
+        />
+      </div>
 
-        {/* Brush settings */}
+      {/* Brush settings column for landscape */}
+      <div className="flex-shrink-0 portrait:hidden landscape:flex flex-col flex-wrap h-full gap-4">
         <BrushSettings
           size={brushSize}
           onSizeChange={setBrushSize}
