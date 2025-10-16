@@ -10,10 +10,15 @@ import atomImage from "@/assets/images/atom.png"
 import balloonImage from "@/assets/images/balloon.png"
 import candyCaneImage from "@/assets/images/candy-cane.png"
 import circleImage from "@/assets/images/circle.png"
+import elephantImage from "@/assets/images/elephant.png"
 import icecreamImage from "@/assets/images/icecream.png"
+import pawImage from "@/assets/images/paw.png"
 import puzzleImage from "@/assets/images/puzzle.png"
+import seaweedImage from "@/assets/images/seaweed.png"
+import snowflakeImage from "@/assets/images/snowflake.png"
 import squareImage from "@/assets/images/square.png"
 import starImage from "@/assets/images/star.png"
+import sunImage from "@/assets/images/sun.png"
 import triangleImage from "@/assets/images/triangle.png"
 
 const IMAGES = [
@@ -26,6 +31,11 @@ const IMAGES = [
   { id: 7, name: "Candy Cane", src: candyCaneImage },
   { id: 8, name: "Puzzle", src: puzzleImage },
   { id: 9, name: "Atom", src: atomImage },
+  { id: 10, name: "Elephant", src: elephantImage },
+  { id: 11, name: "Paw Print", src: pawImage },
+  { id: 12, name: "Seaweed", src: seaweedImage },
+  { id: 13, name: "Snowflake", src: snowflakeImage },
+  { id: 14, name: "Sun", src: sunImage },
 ]
 
 export default function Home() {
