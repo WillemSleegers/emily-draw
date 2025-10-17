@@ -26,6 +26,7 @@ export interface CanvasRef {
   redo: () => void
   canUndo: () => boolean
   canRedo: () => boolean
+  clear: () => void
 }
 
 // Performance debugging flag - set to true only during development
@@ -118,6 +119,22 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     },
     canUndo: () => undoStackRef.current.length > 0,
     canRedo: () => redoStackRef.current.length > 0,
+    clear: () => {
+      // Save current state to undo stack before clearing
+      const currentState = captureState()
+      undoStackRef.current.push(currentState)
+      redoStackRef.current = [] // Clear redo stack
+
+      // Clear all layers and restore the white mask background
+      layers.forEach((layer) => {
+        layer.ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height)
+        // Restore the white mask pixels that define the drawable region
+        layer.ctx.putImageData(layer.mask, 0, 0)
+      })
+
+      // Notify parent of history change
+      onHistoryChange?.()
+    },
   }))
 
   // Mount layer canvases into the DOM

@@ -11,7 +11,7 @@ import BrushSettings, {
 } from "@/components/BrushSettings"
 import { ProcessedImageData } from "@/lib/processImage"
 import { generateLayers, createLayerLookupTable } from "@/lib/layerGeneration"
-import { ArrowBigLeftIcon, Undo2Icon, Redo2Icon } from "lucide-react"
+import { ArrowBigLeftIcon, Undo2Icon, Redo2Icon, Trash2Icon } from "lucide-react"
 import { Button } from "./ui/button"
 
 // Fixed canvas dimensions (all images are 1000x1000)
@@ -62,6 +62,13 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
     setCanRedo(canvasRef.current?.canRedo() ?? false)
   }
 
+  const handleClear = () => {
+    canvasRef.current?.clear()
+    // Update button states after clear
+    setCanUndo(canvasRef.current?.canUndo() ?? false)
+    setCanRedo(canvasRef.current?.canRedo() ?? false)
+  }
+
   // Callback from Canvas when drawing state changes
   const handleHistoryChange = () => {
     setCanUndo(canvasRef.current?.canUndo() ?? false)
@@ -70,7 +77,7 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
 
   return (
     <div className="flex portrait:flex-col landscape:flex-row gap-4 h-full w-full touch-none landscape:justify-between p-4 bg-gradient-to-br from-pink-100 via-purple-100 to-blue-100 dark:from-pink-950 dark:via-purple-950 dark:to-blue-950">
-      {/* Back button and undo/redo - separate column in landscape, in row in portrait */}
+      {/* Back button and undo/redo/clear - separate column in landscape, in row in portrait */}
       <div className="flex-shrink-0 portrait:hidden landscape:flex flex-col gap-4">
         <Button
           variant="outline"
@@ -95,9 +102,16 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
         >
           <Redo2Icon className="size-8" />
         </Button>
+        <Button
+          variant="outline"
+          onClick={handleClear}
+          className="size-20 rounded-xl border-4 border-gray-300 dark:border-gray-600 hover:border-red-400 bg-white dark:bg-gray-800"
+        >
+          <Trash2Icon className="size-8" />
+        </Button>
       </div>
 
-      {/* Controls row for portrait (includes back button + undo/redo + controls) */}
+      {/* Controls row for portrait (includes back button + undo/redo/clear + controls) */}
       <div className="flex-shrink-0 portrait:flex landscape:hidden flex-row gap-4 w-full overflow-x-auto touch-pan-x justify-between">
         <div className="flex gap-4">
           <Button
@@ -122,6 +136,13 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
             className="flex-shrink-0 size-20 rounded-xl border-4 border-gray-300 dark:border-gray-600 hover:border-blue-400 bg-white dark:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Redo2Icon className="size-8" />
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleClear}
+            className="flex-shrink-0 size-20 rounded-xl border-4 border-gray-300 dark:border-gray-600 hover:border-red-400 bg-white dark:bg-gray-800"
+          >
+            <Trash2Icon className="size-8" />
           </Button>
         </div>
         <BrushSettings
