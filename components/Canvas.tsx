@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useImperativeHandle, forwardRef } from "react"
 import { getCanvasCoordinates } from "@/lib/canvasUtils"
 import {
   findLayerAtPoint,
@@ -18,12 +18,20 @@ interface CanvasProps {
   brushType: BrushType
   isEraser: boolean
   stayWithinLines: boolean
+  onHistoryChange?: () => void
+}
+
+export interface CanvasRef {
+  undo: () => void
+  redo: () => void
+  canUndo: () => boolean
+  canRedo: () => boolean
 }
 
 // Performance debugging flag - set to true only during development
 const DEBUG_PERFORMANCE = false
 
-export default function Canvas({
+const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
   layers,
   lookupTable,
   fillColor,
@@ -31,7 +39,8 @@ export default function Canvas({
   brushType,
   isEraser,
   stayWithinLines,
-}: CanvasProps) {
+  onHistoryChange,
+}, ref) {
   const containerRef = useRef<HTMLDivElement>(null)
 
   // Drawing state
@@ -51,6 +60,65 @@ export default function Canvas({
     totalMoveTime: 0,
     sampleCount: 0,
   })
+
+  // Undo/redo history - store ImageData snapshots
+  const undoStackRef = useRef<Map<number, ImageData>[]>([])
+  const redoStackRef = useRef<Map<number, ImageData>[]>([])
+
+  // Capture current state of all layers
+  const captureState = (): Map<number, ImageData> => {
+    const state = new Map<number, ImageData>()
+    layers.forEach((layer) => {
+      const imageData = layer.ctx.getImageData(0, 0, layer.canvas.width, layer.canvas.height)
+      state.set(layer.id, imageData)
+    })
+    return state
+  }
+
+  // Restore state to all layers
+  const restoreState = (state: Map<number, ImageData>) => {
+    layers.forEach((layer) => {
+      const imageData = state.get(layer.id)
+      if (imageData) {
+        layer.ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height)
+        layer.ctx.putImageData(imageData, 0, 0)
+      }
+    })
+  }
+
+  // Expose undo/redo methods via ref
+  useImperativeHandle(ref, () => ({
+    undo: () => {
+      if (undoStackRef.current.length === 0) return
+
+      // Save current state to redo stack
+      const currentState = captureState()
+      redoStackRef.current.push(currentState)
+
+      // Pop and restore from undo stack
+      const stateToRestore = undoStackRef.current.pop()!
+      restoreState(stateToRestore)
+
+      // Notify parent of history change
+      onHistoryChange?.()
+    },
+    redo: () => {
+      if (redoStackRef.current.length === 0) return
+
+      // Save current state to undo stack
+      const currentState = captureState()
+      undoStackRef.current.push(currentState)
+
+      // Pop and restore from redo stack
+      const stateToRestore = redoStackRef.current.pop()!
+      restoreState(stateToRestore)
+
+      // Notify parent of history change
+      onHistoryChange?.()
+    },
+    canUndo: () => undoStackRef.current.length > 0,
+    canRedo: () => redoStackRef.current.length > 0,
+  }))
 
   // Mount layer canvases into the DOM
   useEffect(() => {
@@ -73,6 +141,11 @@ export default function Canvas({
       layer.canvas.style.pointerEvents = "none"
       container.appendChild(layer.canvas)
     })
+
+    // Initialize empty undo/redo stacks
+    // We'll capture state when drawing starts
+    undoStackRef.current = []
+    redoStackRef.current = []
 
     // Cleanup function to remove canvases when component unmounts or layers change
     return () => {
@@ -138,6 +211,11 @@ export default function Canvas({
       // Free drawing: no layer restrictions
       setActiveLayer(null)
     }
+
+    // Capture state BEFORE starting to draw
+    const beforeState = captureState()
+    undoStackRef.current.push(beforeState)
+    redoStackRef.current = [] // Clear redo stack on new action
 
     setIsDrawing(true)
     lastPointRef.current = coords
@@ -298,6 +376,11 @@ export default function Canvas({
       }
     }
 
+    // Notify parent of history change if we were drawing
+    if (isDrawing) {
+      onHistoryChange?.()
+    }
+
     setIsDrawing(false)
     setActiveLayer(null)
     lastPointRef.current = null
@@ -419,4 +502,7 @@ export default function Canvas({
       {/* Layer canvases are mounted here via useEffect */}
     </div>
   )
-}
+})
+
+export default Canvas
+export type { CanvasRef }
