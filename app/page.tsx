@@ -4,6 +4,7 @@ import { useState } from "react"
 import ImageGallery from "@/components/ImageGallery"
 import DrawingScreen from "@/components/DrawingScreen"
 import LoadingScreen from "@/components/LoadingScreen"
+import ErrorBoundary from "@/components/ErrorBoundary"
 import { processImage, type ProcessedImageData } from "@/lib/processImage"
 
 import atomImage from "@/assets/images/atom.png"
@@ -75,7 +76,9 @@ export default function Home() {
   if (processedData) {
     return (
       <div className="h-full overflow-hidden">
-        <DrawingScreen data={processedData} onBack={handleBack} />
+        <ErrorBoundary onReset={handleBack}>
+          <DrawingScreen data={processedData} onBack={handleBack} />
+        </ErrorBoundary>
       </div>
     )
   }
