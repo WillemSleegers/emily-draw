@@ -265,7 +265,6 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     const coords = getCanvasCoordinates(layers[0].canvas, event)
 
     let targetLayer: DrawingLayer | null = null
-    let foundLayer = true
 
     if (stayWithinLines) {
       // Region-locked drawing: find the layer using O(1) lookup table
@@ -444,17 +443,28 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     lastPointRef.current = coords
   }
 
-  const handlePointerUp = (clearLayer = true) => {
+  const handlePointerUp = () => {
     // Notify parent of history change if we were drawing
     if (isDrawing) {
       onHistoryChange?.()
     }
 
     setIsDrawing(false)
-    if (clearLayer) {
-      activeLayerRef.current = null
-      hasStateCapturedRef.current = false
+    activeLayerRef.current = null
+    hasStateCapturedRef.current = false
+    lastPointRef.current = null
+    lastGlobalPositionRef.current = null
+    hasMovedRef.current = false
+  }
+
+  const handlePointerUpPreserveLayer = () => {
+    // Notify parent of history change if we were drawing
+    if (isDrawing) {
+      onHistoryChange?.()
     }
+
+    setIsDrawing(false)
+    // Don't clear activeLayerRef - preserve it for re-entry
     lastPointRef.current = null
     lastGlobalPositionRef.current = null
     hasMovedRef.current = false
@@ -464,7 +474,7 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     const container = containerRef.current
     if (!container || !isDrawing || layers.length === 0) {
       // Not drawing, just treat it as pointer up
-      handlePointerUp(true)
+      handlePointerUp()
       return
     }
 
@@ -505,7 +515,7 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     }
 
     // Stop drawing but preserve the active layer for re-entry
-    handlePointerUp(false)
+    handlePointerUpPreserveLayer()
   }
 
   const handlePointerEnter = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -597,7 +607,7 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
 
   const handleTouchEnd = (event: React.TouchEvent<HTMLDivElement>) => {
     event.preventDefault()
-    handlePointerUp(true)
+    handlePointerUp()
   }
 
   return (
