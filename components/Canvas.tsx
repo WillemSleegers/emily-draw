@@ -27,6 +27,7 @@ export interface CanvasRef {
   canUndo: () => boolean
   canRedo: () => boolean
   clear: () => void
+  save: (outlineImage?: HTMLImageElement) => string
 }
 
 // Performance debugging flag - set to true only during development
@@ -134,6 +135,30 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
 
       // Notify parent of history change
       onHistoryChange?.()
+    },
+    save: (outlineImage?: HTMLImageElement) => {
+      if (layers.length === 0) return ""
+
+      // Create a temporary canvas to composite all layers
+      const tempCanvas = document.createElement("canvas")
+      tempCanvas.width = layers[0].canvas.width
+      tempCanvas.height = layers[0].canvas.height
+      const tempCtx = tempCanvas.getContext("2d")
+
+      if (!tempCtx) return ""
+
+      // Composite all layers onto the temp canvas
+      layers.forEach((layer) => {
+        tempCtx.drawImage(layer.canvas, 0, 0)
+      })
+
+      // If outline image is provided, draw it on top
+      if (outlineImage) {
+        tempCtx.drawImage(outlineImage, 0, 0, tempCanvas.width, tempCanvas.height)
+      }
+
+      // Convert to data URL (PNG format)
+      return tempCanvas.toDataURL("image/png")
     },
   }))
 
