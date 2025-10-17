@@ -12,6 +12,7 @@ import balloonImage from "@/assets/images/balloon.png"
 import candyCaneImage from "@/assets/images/candy-cane.png"
 import circleImage from "@/assets/images/circle.png"
 import elephantImage from "@/assets/images/elephant.png"
+import emptyImage from "@/assets/images/empty.png"
 import icecreamImage from "@/assets/images/icecream.png"
 import pawImage from "@/assets/images/paw.png"
 import puzzleImage from "@/assets/images/puzzle.png"
@@ -23,6 +24,7 @@ import sunImage from "@/assets/images/sun.png"
 import triangleImage from "@/assets/images/triangle.png"
 
 const IMAGES = [
+  { id: 0, name: "Empty", src: emptyImage },
   { id: 1, name: "Circle", src: circleImage },
   { id: 2, name: "Square", src: squareImage },
   { id: 3, name: "Triangle", src: triangleImage },
