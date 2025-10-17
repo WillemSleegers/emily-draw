@@ -48,12 +48,16 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
 
   // Drawing state
   const [isDrawing, setIsDrawing] = useState(false)
-  const [activeLayer, setActiveLayer] = useState<DrawingLayer | null>(null)
+  const activeLayerRef = useRef<DrawingLayer | null>(null)
   const lastPointRef = useRef<{ x: number; y: number } | null>(null)
   const hasMovedRef = useRef(false)
+  const hasStateCapturedRef = useRef(false)
 
   // Global pointer position tracking (for edge gap fix)
   const lastGlobalPositionRef = useRef<{ x: number; y: number } | null>(null)
+
+  // Track last event time to prevent double-firing from both pointer and touch
+  const lastEventTimeRef = useRef<number>(0)
 
   // Performance profiling (only active when DEBUG_PERFORMANCE is true)
   const frameCountRef = useRef(0)
@@ -220,9 +224,10 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
       }
     }
 
-    window.addEventListener("pointermove", handleGlobalPointerMove)
-    return () =>
+    window.addEventListener("pointermove", handleGlobalPointerMove, { passive: false })
+    return () => {
       window.removeEventListener("pointermove", handleGlobalPointerMove)
+    }
   }, [layers])
 
   // Apply brush settings to a context
@@ -247,30 +252,93 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault()
+
+    // Prevent double-firing from both pointer and touch events
+    const now = Date.now()
+    if (now - lastEventTimeRef.current < 50) return
+    lastEventTimeRef.current = now
+
     const container = containerRef.current
     if (!container || layers.length === 0) return
 
     // Use first layer canvas for coordinate calculation
     const coords = getCanvasCoordinates(layers[0].canvas, event)
 
+    let targetLayer: DrawingLayer | null = null
+    let foundLayer = true
+
     if (stayWithinLines) {
       // Region-locked drawing: find the layer using O(1) lookup table
       const layer = findLayerAtPoint(layers, coords.x, coords.y, lookupTable)
       if (!layer) return
-      setActiveLayer(layer)
+      activeLayerRef.current = layer
+      targetLayer = layer
     } else {
       // Free drawing: no layer restrictions
-      setActiveLayer(null)
+      activeLayerRef.current = null
     }
 
-    // Capture state BEFORE starting to draw
-    const beforeState = captureState()
-    undoStackRef.current.push(beforeState)
-    redoStackRef.current = [] // Clear redo stack on new action
+    // Capture state BEFORE starting to draw (only once per stroke session)
+    if (!hasStateCapturedRef.current) {
+      const beforeState = captureState()
+      undoStackRef.current.push(beforeState)
+      redoStackRef.current = [] // Clear redo stack on new action
+      hasStateCapturedRef.current = true
+    }
 
     setIsDrawing(true)
     lastPointRef.current = coords
     hasMovedRef.current = false
+
+    // Draw initial dot immediately to ensure quick taps are always visible
+    // Use requestAnimationFrame to not block the event handler
+    const color = isEraser ? "#FFFFFF" : fillColor
+    const currentLayer = targetLayer
+
+    requestAnimationFrame(() => {
+      if (stayWithinLines && currentLayer) {
+        // Region-locked: draw dot on target layer
+        drawStrokeWithClipping(
+          currentLayer.canvas,
+          currentLayer.ctx,
+          currentLayer.mask,
+          (ctx) => {
+            ctx.fillStyle = color
+            ctx.globalAlpha = 1.0
+
+            // Apply shadow for soft brush (but not for eraser)
+            if (brushType === "soft" && !isEraser) {
+              ctx.shadowBlur = brushSize * 0.5
+              ctx.shadowColor = color
+            } else {
+              ctx.shadowBlur = 0
+            }
+
+            ctx.beginPath()
+            ctx.arc(coords.x, coords.y, brushSize / 2, 0, Math.PI * 2)
+            ctx.fill()
+          }
+        )
+      } else if (!stayWithinLines) {
+        // Free drawing: draw dot on all layers
+        layers.forEach((layer) => {
+          layer.ctx.fillStyle = color
+          layer.ctx.globalAlpha = 1.0
+
+          // Apply shadow for soft brush (but not for eraser)
+          if (brushType === "soft" && !isEraser) {
+            layer.ctx.shadowBlur = brushSize * 0.5
+            layer.ctx.shadowColor = color
+          } else {
+            layer.ctx.shadowBlur = 0
+          }
+
+          layer.ctx.beginPath()
+          layer.ctx.arc(coords.x, coords.y, brushSize / 2, 0, Math.PI * 2)
+          layer.ctx.fill()
+        })
+      }
+    })
   }
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -297,13 +365,14 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     // Only mark as moved if distance is significant
     const significantMovement = distance > SIGNIFICANT_MOVEMENT_THRESHOLD
 
-    if (stayWithinLines && activeLayer) {
+    if (stayWithinLines && activeLayerRef.current) {
       // Region-locked drawing with clipping (layer canvas updates automatically in DOM)
       const drawStart = DEBUG_PERFORMANCE ? performance.now() : 0
+      const layer = activeLayerRef.current
       drawStrokeWithClipping(
-        activeLayer.canvas,
-        activeLayer.ctx,
-        activeLayer.mask,
+        layer.canvas,
+        layer.ctx,
+        layer.mask,
         (ctx) => {
           applyBrushSettings(ctx)
           ctx.beginPath()
@@ -375,65 +444,17 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     lastPointRef.current = coords
   }
 
-  const handlePointerUp = () => {
-    // Check if this was a click without movement (draw a circle)
-    const lastPoint = lastPointRef.current
-    if (lastPoint && isDrawing && !hasMovedRef.current) {
-      // Use white for eraser, otherwise use selected color
-      const color = isEraser ? "#FFFFFF" : fillColor
-
-      // Draw a circle at the click point
-      if (stayWithinLines && activeLayer) {
-        // Region-locked: draw circle on active layer
-        drawStrokeWithClipping(
-          activeLayer.canvas,
-          activeLayer.ctx,
-          activeLayer.mask,
-          (ctx) => {
-            ctx.fillStyle = color
-            ctx.globalAlpha = 1.0
-
-            // Apply shadow for soft brush (but not for eraser)
-            if (brushType === "soft" && !isEraser) {
-              ctx.shadowBlur = brushSize * 0.5
-              ctx.shadowColor = color
-            } else {
-              ctx.shadowBlur = 0
-            }
-
-            ctx.beginPath()
-            ctx.arc(lastPoint.x, lastPoint.y, brushSize / 2, 0, Math.PI * 2)
-            ctx.fill()
-          }
-        )
-      } else if (!stayWithinLines) {
-        // Free drawing: draw circle on all layers
-        layers.forEach((layer) => {
-          layer.ctx.fillStyle = color
-          layer.ctx.globalAlpha = 1.0
-
-          // Apply shadow for soft brush (but not for eraser)
-          if (brushType === "soft" && !isEraser) {
-            layer.ctx.shadowBlur = brushSize * 0.5
-            layer.ctx.shadowColor = color
-          } else {
-            layer.ctx.shadowBlur = 0
-          }
-
-          layer.ctx.beginPath()
-          layer.ctx.arc(lastPoint.x, lastPoint.y, brushSize / 2, 0, Math.PI * 2)
-          layer.ctx.fill()
-        })
-      }
-    }
-
+  const handlePointerUp = (clearLayer = true) => {
     // Notify parent of history change if we were drawing
     if (isDrawing) {
       onHistoryChange?.()
     }
 
     setIsDrawing(false)
-    setActiveLayer(null)
+    if (clearLayer) {
+      activeLayerRef.current = null
+      hasStateCapturedRef.current = false
+    }
     lastPointRef.current = null
     lastGlobalPositionRef.current = null
     hasMovedRef.current = false
@@ -443,7 +464,7 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     const container = containerRef.current
     if (!container || !isDrawing || layers.length === 0) {
       // Not drawing, just treat it as pointer up
-      handlePointerUp()
+      handlePointerUp(true)
       return
     }
 
@@ -456,12 +477,13 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
       lastPoint &&
       (lastPoint.x !== exitCoords.x || lastPoint.y !== exitCoords.y)
     ) {
-      if (stayWithinLines && activeLayer) {
+      if (stayWithinLines && activeLayerRef.current) {
         // Region-locked drawing with clipping (canvas updates automatically in DOM)
+        const layer = activeLayerRef.current
         drawStrokeWithClipping(
-          activeLayer.canvas,
-          activeLayer.ctx,
-          activeLayer.mask,
+          layer.canvas,
+          layer.ctx,
+          layer.mask,
           (ctx) => {
             applyBrushSettings(ctx)
             ctx.beginPath()
@@ -482,8 +504,8 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
       }
     }
 
-    // Stop drawing
-    handlePointerUp()
+    // Stop drawing but preserve the active layer for re-entry
+    handlePointerUp(false)
   }
 
   const handlePointerEnter = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -494,19 +516,18 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     if (event.buttons === 1) {
       const coords = getCanvasCoordinates(layers[0].canvas, event)
 
-      if (stayWithinLines) {
-        // Region-locked: find the layer using O(1) lookup table
-        const layer = findLayerAtPoint(layers, coords.x, coords.y, lookupTable)
-        if (!layer) return
-        setActiveLayer(layer)
+      // If we have an active layer from before leaving, continue using it
+      // Don't find a new layer - this preserves the original drawing region
+      const currentLayer = activeLayerRef.current
 
-        // If we have a previous global position, draw from there to fix edge gaps
+      if (stayWithinLines && currentLayer) {
+        // Continue drawing on the same layer we started with
         const globalPos = lastGlobalPositionRef.current
         if (
           globalPos &&
           (globalPos.x !== coords.x || globalPos.y !== coords.y)
         ) {
-          drawStrokeWithClipping(layer.canvas, layer.ctx, layer.mask, (ctx) => {
+          drawStrokeWithClipping(currentLayer.canvas, currentLayer.ctx, currentLayer.mask, (ctx) => {
             applyBrushSettings(ctx)
             ctx.beginPath()
             ctx.moveTo(globalPos.x, globalPos.y)
@@ -514,11 +535,8 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
             ctx.stroke()
           })
         }
-      } else {
-        // Free drawing: no layer restrictions
-        setActiveLayer(null)
-
-        // If we have a previous global position, draw from there to fix edge gaps
+      } else if (!stayWithinLines) {
+        // Free drawing: draw on all layers
         const globalPos = lastGlobalPositionRef.current
         if (
           globalPos &&
@@ -534,24 +552,74 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
         }
       }
 
-      // Resume drawing
-      setIsDrawing(true)
-      lastPointRef.current = coords
+      // Resume drawing only if we have a layer to draw on
+      if (activeLayerRef.current || !stayWithinLines) {
+        setIsDrawing(true)
+        lastPointRef.current = coords
+      }
     }
   }
 
+  // Add touch event handlers as fallback for Safari's pointer event filtering
+  const handleTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
+    // Convert touch to pointer-like event
+    if (event.touches.length > 0) {
+      const touch = event.touches[0]
+      const syntheticEvent = {
+        preventDefault: () => event.preventDefault(),
+        clientX: touch.clientX,
+        clientY: touch.clientY,
+        pointerType: 'pen',
+        pressure: 0.5,
+        buttons: 1,
+        isPrimary: true,
+      } as React.PointerEvent<HTMLDivElement>
+
+      handlePointerDown(syntheticEvent)
+    }
+  }
+
+  const handleTouchMove = (event: React.TouchEvent<HTMLDivElement>) => {
+    if (event.touches.length > 0) {
+      const touch = event.touches[0]
+      const syntheticEvent = {
+        preventDefault: () => event.preventDefault(),
+        clientX: touch.clientX,
+        clientY: touch.clientY,
+        pointerType: 'pen',
+        pressure: 0.5,
+        buttons: 1,
+      } as React.PointerEvent<HTMLDivElement>
+
+      handlePointerMove(syntheticEvent)
+    }
+  }
+
+  const handleTouchEnd = (event: React.TouchEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    handlePointerUp(true)
+  }
+
   return (
-    <div
-      ref={containerRef}
-      className="aspect-square touch-none"
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerLeave={handlePointerLeave}
-      onPointerEnter={handlePointerEnter}
-    >
-      {/* Layer canvases are mounted here via useEffect */}
-    </div>
+    <>
+      <div
+        ref={containerRef}
+        className="aspect-square"
+        style={{ touchAction: 'none' }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onPointerLeave={handlePointerLeave}
+        onPointerEnter={handlePointerEnter}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
+      >
+        {/* Layer canvases are mounted here via useEffect */}
+      </div>
+    </>
   )
 })
 
