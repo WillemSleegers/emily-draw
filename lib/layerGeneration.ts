@@ -4,6 +4,7 @@
  */
 
 import type { RegionMap } from "./regionDetection";
+import { NO_LAYER_SENTINEL, OPAQUE_ALPHA, TRANSPARENT_ALPHA } from "./constants";
 
 export interface DrawingLayer {
   id: number;
@@ -40,16 +41,16 @@ export function generateLayers(regionMap: RegionMap): DrawingLayer[] {
 
         if (pixelRegionId === regionId) {
           // This pixel belongs to this region - make it opaque in the mask
-          mask.data[idx] = 255;     // r
-          mask.data[idx + 1] = 255; // g
-          mask.data[idx + 2] = 255; // b
-          mask.data[idx + 3] = 255; // a
+          mask.data[idx] = OPAQUE_ALPHA;
+          mask.data[idx + 1] = OPAQUE_ALPHA;
+          mask.data[idx + 2] = OPAQUE_ALPHA;
+          mask.data[idx + 3] = OPAQUE_ALPHA;
         } else {
           // Not in this region - keep transparent
-          mask.data[idx] = 0;
-          mask.data[idx + 1] = 0;
-          mask.data[idx + 2] = 0;
-          mask.data[idx + 3] = 0;
+          mask.data[idx] = TRANSPARENT_ALPHA;
+          mask.data[idx + 1] = TRANSPARENT_ALPHA;
+          mask.data[idx + 2] = TRANSPARENT_ALPHA;
+          mask.data[idx + 3] = TRANSPARENT_ALPHA;
         }
       }
     }
@@ -112,9 +113,8 @@ export function createLayerLookupTable(
   height: number
 ): LayerLookupTable {
   // Use Uint16Array to support up to 65,535 layers (more than enough)
-  // Value 65535 means "no layer at this pixel"
   const data = new Uint16Array(width * height);
-  data.fill(65535); // Initialize all pixels to "no layer"
+  data.fill(NO_LAYER_SENTINEL);
 
   // Populate lookup table by checking each layer's mask
   layers.forEach((layer, layerIndex) => {
@@ -124,7 +124,7 @@ export function createLayerLookupTable(
         const maskIdx = linearIdx * 4;
 
         // If this pixel is opaque in the mask, it belongs to this layer
-        if (layer.mask.data[maskIdx + 3] === 255) {
+        if (layer.mask.data[maskIdx + 3] === OPAQUE_ALPHA) {
           data[linearIdx] = layerIndex;
         }
       }
@@ -158,8 +158,8 @@ export function findLayerAtPoint(
     const linearIdx = y * lookupTable.width + x;
     const layerIndex = lookupTable.data[linearIdx];
 
-    // 65535 means no layer at this position
-    if (layerIndex === 65535) {
+    // NO_LAYER_SENTINEL means no layer at this position
+    if (layerIndex === NO_LAYER_SENTINEL) {
       return null;
     }
 
@@ -177,22 +177,4 @@ export function findLayerAtPoint(
   }
 
   return null;
-}
-
-/**
- * Composite all layers onto a display canvas
- */
-export function compositeLayers(
-  displayCtx: CanvasRenderingContext2D,
-  layers: DrawingLayer[],
-  width: number,
-  height: number
-): void {
-  // Clear the display canvas
-  displayCtx.clearRect(0, 0, width, height);
-
-  // Draw each layer onto the display canvas
-  for (const layer of layers) {
-    displayCtx.drawImage(layer.canvas, 0, 0, width, height);
-  }
 }

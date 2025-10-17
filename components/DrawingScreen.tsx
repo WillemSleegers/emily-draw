@@ -13,6 +13,7 @@ import { ProcessedImageData } from "@/lib/processImage"
 import { generateLayers, createLayerLookupTable } from "@/lib/layerGeneration"
 import { ArrowBigLeftIcon, Undo2Icon, Redo2Icon, Trash2Icon, DownloadIcon } from "lucide-react"
 import { Button } from "./ui/button"
+import { APP_BACKGROUND_GRADIENT } from "@/lib/constants"
 
 // Fixed canvas dimensions (all images are 1000x1000)
 const CANVAS_SIZE = 1000
@@ -47,26 +48,18 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
 
-  // Handlers that call Canvas methods and update button states
+  // Handlers that call Canvas methods
+  // Note: Button states are updated via onHistoryChange callback
   const handleUndo = () => {
     canvasRef.current?.undo()
-    // Update button states after undo
-    setCanUndo(canvasRef.current?.canUndo() ?? false)
-    setCanRedo(canvasRef.current?.canRedo() ?? false)
   }
 
   const handleRedo = () => {
     canvasRef.current?.redo()
-    // Update button states after redo
-    setCanUndo(canvasRef.current?.canUndo() ?? false)
-    setCanRedo(canvasRef.current?.canRedo() ?? false)
   }
 
   const handleClear = () => {
     canvasRef.current?.clear()
-    // Update button states after clear
-    setCanUndo(canvasRef.current?.canUndo() ?? false)
-    setCanRedo(canvasRef.current?.canRedo() ?? false)
   }
 
   const handleSave = () => {
@@ -91,7 +84,7 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
   }
 
   return (
-    <div className="flex portrait:flex-col landscape:flex-row gap-4 h-full w-full touch-none landscape:justify-between p-4 bg-gradient-to-br from-pink-100 via-purple-100 to-blue-100 dark:from-pink-950 dark:via-purple-950 dark:to-blue-950">
+    <div className={`flex portrait:flex-col landscape:flex-row gap-4 h-full w-full touch-none landscape:justify-between p-4 ${APP_BACKGROUND_GRADIENT}`}>
       {/* Back button and undo/redo/clear/save - separate column in landscape, in row in portrait */}
       <div className="flex-shrink-0 portrait:hidden landscape:flex flex-col gap-4">
         <Button

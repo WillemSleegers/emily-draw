@@ -1,8 +1,9 @@
 "use client"
 
 import React, { Component, ReactNode } from "react"
-import { AlertCircleIcon, RefreshCwIcon, ArrowBigLeftIcon } from "lucide-react"
+import { AlertCircleIcon, ArrowBigLeftIcon } from "lucide-react"
 import { Button } from "./ui/button"
+import { APP_BACKGROUND_GRADIENT } from "@/lib/constants"
 
 interface ErrorBoundaryProps {
   children: ReactNode
@@ -40,7 +41,7 @@ export default class ErrorBoundary extends Component<
   render() {
     if (this.state.hasError) {
       return (
-        <div className="flex flex-col items-center justify-center h-full w-full p-8 bg-gradient-to-br from-pink-100 via-purple-100 to-blue-100 dark:from-pink-950 dark:via-purple-950 dark:to-blue-950">
+        <div className={`flex flex-col items-center justify-center h-full w-full p-8 ${APP_BACKGROUND_GRADIENT}`}>
           <div className="flex flex-col items-center gap-12">
             {/* Sad icon */}
             <div className="size-48 flex items-center justify-center rounded-full bg-red-100 dark:bg-red-900">

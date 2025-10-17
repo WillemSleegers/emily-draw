@@ -1,5 +1,6 @@
 import { detectRegions, type RegionMap } from "@/lib/regionDetection"
 import { loadImageData } from "@/lib/imageLoader"
+import { BOUNDARY_THRESHOLD, MIN_REGION_SIZE } from "@/lib/constants"
 
 export interface ProcessedImageData {
   regionMap: RegionMap
@@ -18,7 +19,7 @@ export async function processImage(
 
   // Load and process image data for region detection
   const imageData = await loadImageData(imgUrl)
-  const regionMap = detectRegions(imageData, 128, 100)
+  const regionMap = detectRegions(imageData, BOUNDARY_THRESHOLD, MIN_REGION_SIZE)
 
   // Load outline image
   const outlineImage = await loadOutlineImage(imgUrl)

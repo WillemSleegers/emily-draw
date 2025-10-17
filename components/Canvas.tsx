@@ -9,6 +9,7 @@ import {
   type LayerLookupTable,
 } from "@/lib/layerGeneration"
 import type { BrushType } from "./BrushSettings"
+import { SIGNIFICANT_MOVEMENT_THRESHOLD, FPS_LOG_INTERVAL_MS } from "@/lib/constants"
 
 interface CanvasProps {
   layers: DrawingLayer[]
@@ -167,8 +168,7 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     const container = containerRef.current
     if (!container) return
 
-    // Clear container by removing all child nodes properly
-    // This avoids memory leaks from innerHTML = ""
+    // Clear container by removing all child nodes using DOM methods
     while (container.firstChild) {
       container.removeChild(container.firstChild)
     }
@@ -285,8 +285,8 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     const dy = coords.y - lastPoint.y
     const distance = Math.sqrt(dx * dx + dy * dy)
 
-    // Only mark as moved if distance is significant (more than 2 pixels)
-    const significantMovement = distance > 2
+    // Only mark as moved if distance is significant
+    const significantMovement = distance > SIGNIFICANT_MOVEMENT_THRESHOLD
 
     if (stayWithinLines && activeLayer) {
       // Region-locked drawing with clipping (layer canvas updates automatically in DOM)
@@ -331,10 +331,10 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
       performanceMetrics.current.totalMoveTime += moveEnd - moveStart
       performanceMetrics.current.sampleCount++
 
-      // Log FPS and metrics every second
+      // Log FPS and metrics periodically
       frameCountRef.current++
       const now = Date.now()
-      if (now - lastFpsTimeRef.current >= 1000) {
+      if (now - lastFpsTimeRef.current >= FPS_LOG_INTERVAL_MS) {
         const fps = frameCountRef.current
         const metrics = performanceMetrics.current
         const avgTotal =
@@ -547,4 +547,3 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
 })
 
 export default Canvas
-export type { CanvasRef }
