@@ -10,7 +10,7 @@ import BrushSettings, {
   getBrushSizePixels,
 } from "@/components/BrushSettings"
 import { ProcessedImageData } from "@/lib/processImage"
-import { generateLayers } from "@/lib/layerGeneration"
+import { generateLayers, createLayerLookupTable } from "@/lib/layerGeneration"
 import { ArrowBigLeftIcon } from "lucide-react"
 import { Button } from "./ui/button"
 
@@ -34,6 +34,11 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
   const layers = useMemo(() => {
     return generateLayers(regionMap)
   }, [regionMap])
+
+  // Create O(1) lookup table for fast layer-at-point queries (memoized)
+  const lookupTable = useMemo(() => {
+    return createLayerLookupTable(layers, CANVAS_SIZE, CANVAS_SIZE)
+  }, [layers])
 
   return (
     <div className="flex portrait:flex-col landscape:flex-row gap-4 h-full w-full touch-none landscape:justify-between p-4 bg-gradient-to-br from-pink-100 via-purple-100 to-blue-100 dark:from-pink-950 dark:via-purple-950 dark:to-blue-950">
@@ -88,6 +93,7 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
         <div className="relative aspect-square portrait:w-full portrait:max-h-full landscape:h-full landscape:max-w-full border-4 border-gray-300 dark:border-gray-700 rounded-2xl overflow-hidden">
           <Canvas
             layers={layers}
+            lookupTable={lookupTable}
             fillColor={fillColor}
             brushSize={getBrushSizePixels(brushSize)}
             brushType={brushType}

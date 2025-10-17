@@ -95,7 +95,9 @@ function floodFillRegion(
   const height = imageData.height;
   const pixels: Point[] = [];
   const stack: Point[] = [{ x: startX, y: startY }];
-  const visited = new Set<string>();
+  // Use Set<number> with linear indices instead of Set<string> for better performance
+  // Linear index = y * width + x
+  const visited = new Set<number>();
 
   while (stack.length > 0) {
     const { x, y } = stack.pop()!;
@@ -103,9 +105,10 @@ function floodFillRegion(
     // Skip if out of bounds
     if (x < 0 || x >= width || y < 0 || y >= height) continue;
 
-    const key = `${x},${y}`;
-    if (visited.has(key)) continue;
-    visited.add(key);
+    // Convert to linear index for efficient visited tracking
+    const linearIndex = y * width + x;
+    if (visited.has(linearIndex)) continue;
+    visited.add(linearIndex);
 
     // Skip if this pixel is already assigned or is a boundary
     if (pixelToRegion[y][x] !== 0) continue;

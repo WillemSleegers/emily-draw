@@ -12,6 +12,12 @@ export interface DrawingLayer {
   mask: ImageData;
 }
 
+export interface LayerLookupTable {
+  width: number;
+  height: number;
+  data: Uint16Array; // Maps linear pixel index to layer index (0-based, 65535 = no layer)
+}
+
 
 /**
  * Generate layer metadata from a region map
@@ -97,18 +103,70 @@ export function drawStrokeWithClipping(
 }
 
 /**
- * Find which layer (region) a point belongs to
+ * Create O(1) lookup table for fast layer-at-point queries
+ * This is much faster than iterating through all layers on every pointer move
+ */
+export function createLayerLookupTable(
+  layers: DrawingLayer[],
+  width: number,
+  height: number
+): LayerLookupTable {
+  // Use Uint16Array to support up to 65,535 layers (more than enough)
+  // Value 65535 means "no layer at this pixel"
+  const data = new Uint16Array(width * height);
+  data.fill(65535); // Initialize all pixels to "no layer"
+
+  // Populate lookup table by checking each layer's mask
+  layers.forEach((layer, layerIndex) => {
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const linearIdx = y * width + x;
+        const maskIdx = linearIdx * 4;
+
+        // If this pixel is opaque in the mask, it belongs to this layer
+        if (layer.mask.data[maskIdx + 3] === 255) {
+          data[linearIdx] = layerIndex;
+        }
+      }
+    }
+  });
+
+  return { width, height, data };
+}
+
+/**
+ * Find which layer (region) a point belongs to using O(1) lookup table
+ * MUCH FASTER than the old O(n) approach that checked every layer
  */
 export function findLayerAtPoint(
   layers: DrawingLayer[],
   x: number,
-  y: number
+  y: number,
+  lookupTable?: LayerLookupTable
 ): DrawingLayer | null {
   // Round coordinates to pixel boundaries
   x = Math.round(x);
   y = Math.round(y);
 
-  // Check each layer's mask to see if this point is in it
+  // Use lookup table if provided (O(1) lookup)
+  if (lookupTable) {
+    // Bounds check
+    if (x < 0 || x >= lookupTable.width || y < 0 || y >= lookupTable.height) {
+      return null;
+    }
+
+    const linearIdx = y * lookupTable.width + x;
+    const layerIndex = lookupTable.data[linearIdx];
+
+    // 65535 means no layer at this position
+    if (layerIndex === 65535) {
+      return null;
+    }
+
+    return layers[layerIndex] || null;
+  }
+
+  // Fallback to old O(n) approach if no lookup table provided (for backwards compatibility)
   for (const layer of layers) {
     const idx = (y * layer.mask.width + x) * 4;
 

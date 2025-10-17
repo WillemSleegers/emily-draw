@@ -87,7 +87,9 @@ export function floodFill(
 
   // Stack-based flood fill to avoid recursion depth issues
   const stack: Point[] = [{ x: startX, y: startY }]
-  const visited = new Set<string>()
+  // Use Set<number> with linear indices instead of Set<string> for better performance
+  // Linear index = y * width + x
+  const visited = new Set<number>()
 
   while (stack.length > 0) {
     const point = stack.pop()!
@@ -98,12 +100,12 @@ export function floodFill(
       continue
     }
 
-    // Create unique key for this pixel
-    const key = `${x},${y}`
-    if (visited.has(key)) {
+    // Convert to linear index for efficient visited tracking
+    const linearIndex = y * width + x
+    if (visited.has(linearIndex)) {
       continue
     }
-    visited.add(key)
+    visited.add(linearIndex)
 
     // Get current pixel color
     const currentColor = getPixelColor(imageData, x, y)

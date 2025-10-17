@@ -6,11 +6,13 @@ import {
   findLayerAtPoint,
   drawStrokeWithClipping,
   type DrawingLayer,
+  type LayerLookupTable,
 } from "@/lib/layerGeneration"
 import type { BrushType } from "./BrushSettings"
 
 interface CanvasProps {
   layers: DrawingLayer[]
+  lookupTable: LayerLookupTable
   fillColor: string
   brushSize: number
   brushType: BrushType
@@ -18,8 +20,12 @@ interface CanvasProps {
   stayWithinLines: boolean
 }
 
+// Performance debugging flag - set to true only during development
+const DEBUG_PERFORMANCE = false
+
 export default function Canvas({
   layers,
+  lookupTable,
   fillColor,
   brushSize,
   brushType,
@@ -37,7 +43,7 @@ export default function Canvas({
   // Global pointer position tracking (for edge gap fix)
   const lastGlobalPositionRef = useRef<{ x: number; y: number } | null>(null)
 
-  // Performance profiling
+  // Performance profiling (only active when DEBUG_PERFORMANCE is true)
   const frameCountRef = useRef(0)
   const lastFpsTimeRef = useRef(Date.now())
   const performanceMetrics = useRef({
@@ -51,8 +57,11 @@ export default function Canvas({
     const container = containerRef.current
     if (!container) return
 
-    // Clear container
-    container.innerHTML = ""
+    // Clear container by removing all child nodes properly
+    // This avoids memory leaks from innerHTML = ""
+    while (container.firstChild) {
+      container.removeChild(container.firstChild)
+    }
 
     // Append each layer canvas to the container
     layers.forEach((layer) => {
@@ -64,6 +73,13 @@ export default function Canvas({
       layer.canvas.style.pointerEvents = "none"
       container.appendChild(layer.canvas)
     })
+
+    // Cleanup function to remove canvases when component unmounts or layers change
+    return () => {
+      while (container.firstChild) {
+        container.removeChild(container.firstChild)
+      }
+    }
   }, [layers])
 
   // Track global pointer position to fix edge gaps on fast entry
@@ -114,8 +130,8 @@ export default function Canvas({
     const coords = getCanvasCoordinates(layers[0].canvas, event)
 
     if (stayWithinLines) {
-      // Region-locked drawing: find the layer
-      const layer = findLayerAtPoint(layers, coords.x, coords.y)
+      // Region-locked drawing: find the layer using O(1) lookup table
+      const layer = findLayerAtPoint(layers, coords.x, coords.y, lookupTable)
       if (!layer) return
       setActiveLayer(layer)
     } else {
@@ -134,7 +150,7 @@ export default function Canvas({
 
     event.preventDefault()
 
-    const moveStart = performance.now()
+    const moveStart = DEBUG_PERFORMANCE ? performance.now() : 0
 
     const coords = getCanvasCoordinates(layers[0].canvas, event)
     const lastPoint = lastPointRef.current
@@ -154,7 +170,7 @@ export default function Canvas({
 
     if (stayWithinLines && activeLayer) {
       // Region-locked drawing with clipping (layer canvas updates automatically in DOM)
-      const drawStart = performance.now()
+      const drawStart = DEBUG_PERFORMANCE ? performance.now() : 0
       drawStrokeWithClipping(
         activeLayer.canvas,
         activeLayer.ctx,
@@ -167,12 +183,14 @@ export default function Canvas({
           ctx.stroke()
         }
       )
-      const drawEnd = performance.now()
-      performanceMetrics.current.drawStrokeTime += drawEnd - drawStart
+      if (DEBUG_PERFORMANCE) {
+        const drawEnd = performance.now()
+        performanceMetrics.current.drawStrokeTime += drawEnd - drawStart
+      }
       if (significantMovement) hasMovedRef.current = true
     } else if (!stayWithinLines) {
       // Free drawing on all layers
-      const drawStart = performance.now()
+      const drawStart = DEBUG_PERFORMANCE ? performance.now() : 0
       layers.forEach((layer) => {
         applyBrushSettings(layer.ctx)
         layer.ctx.beginPath()
@@ -180,43 +198,48 @@ export default function Canvas({
         layer.ctx.lineTo(coords.x, coords.y)
         layer.ctx.stroke()
       })
-      const drawEnd = performance.now()
-      performanceMetrics.current.drawStrokeTime += drawEnd - drawStart
+      if (DEBUG_PERFORMANCE) {
+        const drawEnd = performance.now()
+        performanceMetrics.current.drawStrokeTime += drawEnd - drawStart
+      }
       if (significantMovement) hasMovedRef.current = true
     }
 
-    const moveEnd = performance.now()
-    performanceMetrics.current.totalMoveTime += moveEnd - moveStart
-    performanceMetrics.current.sampleCount++
+    // Performance tracking (only when DEBUG_PERFORMANCE is enabled)
+    if (DEBUG_PERFORMANCE) {
+      const moveEnd = performance.now()
+      performanceMetrics.current.totalMoveTime += moveEnd - moveStart
+      performanceMetrics.current.sampleCount++
 
-    // Log FPS and metrics every second
-    frameCountRef.current++
-    const now = Date.now()
-    if (now - lastFpsTimeRef.current >= 1000) {
-      const fps = frameCountRef.current
-      const metrics = performanceMetrics.current
-      const avgTotal =
-        metrics.sampleCount > 0
-          ? metrics.totalMoveTime / metrics.sampleCount
-          : 0
-      const avgDraw =
-        metrics.sampleCount > 0
-          ? metrics.drawStrokeTime / metrics.sampleCount
-          : 0
+      // Log FPS and metrics every second
+      frameCountRef.current++
+      const now = Date.now()
+      if (now - lastFpsTimeRef.current >= 1000) {
+        const fps = frameCountRef.current
+        const metrics = performanceMetrics.current
+        const avgTotal =
+          metrics.sampleCount > 0
+            ? metrics.totalMoveTime / metrics.sampleCount
+            : 0
+        const avgDraw =
+          metrics.sampleCount > 0
+            ? metrics.drawStrokeTime / metrics.sampleCount
+            : 0
 
-      console.log(
-        `[PERF] FPS: ${fps} | Avg Total: ${avgTotal.toFixed(
-          2
-        )}ms | Avg Draw: ${avgDraw.toFixed(2)}ms`
-      )
+        console.log(
+          `[PERF] FPS: ${fps} | Avg Total: ${avgTotal.toFixed(
+            2
+          )}ms | Avg Draw: ${avgDraw.toFixed(2)}ms`
+        )
 
-      // Reset counters
-      frameCountRef.current = 0
-      lastFpsTimeRef.current = now
-      performanceMetrics.current = {
-        drawStrokeTime: 0,
-        totalMoveTime: 0,
-        sampleCount: 0,
+        // Reset counters
+        frameCountRef.current = 0
+        lastFpsTimeRef.current = now
+        performanceMetrics.current = {
+          drawStrokeTime: 0,
+          totalMoveTime: 0,
+          sampleCount: 0,
+        }
       }
     }
 
@@ -338,8 +361,8 @@ export default function Canvas({
       const coords = getCanvasCoordinates(layers[0].canvas, event)
 
       if (stayWithinLines) {
-        // Region-locked: find the layer
-        const layer = findLayerAtPoint(layers, coords.x, coords.y)
+        // Region-locked: find the layer using O(1) lookup table
+        const layer = findLayerAtPoint(layers, coords.x, coords.y, lookupTable)
         if (!layer) return
         setActiveLayer(layer)
 
