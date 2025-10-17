@@ -200,14 +200,23 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
   // Track global pointer position to fix edge gaps on fast entry
   useEffect(() => {
     const handleGlobalPointerMove = (event: PointerEvent) => {
-      if (layers.length === 0) return
+      if (layers.length === 0 || !containerRef.current) return
 
       // Only track position when actively drawing (button is held down)
-      // This prevents capturing positions from UI interactions like color picker clicks
+      // AND when the pointer is over the canvas container
       if (event.buttons === 1) {
-        // Convert global coordinates to canvas coordinates
-        const coords = getCanvasCoordinates(layers[0].canvas, event)
-        lastGlobalPositionRef.current = coords
+        const rect = containerRef.current.getBoundingClientRect()
+        const isOverCanvas =
+          event.clientX >= rect.left &&
+          event.clientX <= rect.right &&
+          event.clientY >= rect.top &&
+          event.clientY <= rect.bottom
+
+        if (isOverCanvas) {
+          // Convert global coordinates to canvas coordinates
+          const coords = getCanvasCoordinates(layers[0].canvas, event)
+          lastGlobalPositionRef.current = coords
+        }
       }
     }
 
