@@ -9,13 +9,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Core Features
 
 - **Region-Locked Drawing**: Intelligent stay-within-the-lines functionality that automatically detects bounded regions in outline images and prevents coloring outside them
-- **Touch-Optimized**: Designed primarily for iPad/touchscreen use with large, easy-to-tap controls
+- **Apple Pencil Optimized**: Touch event fallback system ensures reliable drawing with Apple Pencil on iPad, even during quick taps and short strokes
+- **Touch-Optimized**: Designed primarily for iPad/touchscreen use with large, easy-to-tap controls and proper touch-action handling
 - **Child-Friendly UI**: Large square buttons with visual-only indicators (no text labels) for brush size and type selection
 - **Brush Controls**:
   - Three brush sizes (small, medium, large)
   - Two brush types (solid, soft with blur effect)
-- **Color Picker**: Simple color selection interface
-- **Automatic Drawing Continuation**: Seamlessly resume drawing when re-entering the canvas while holding down
+  - Eraser tool for corrections
+- **Color Picker**: Simple color selection interface with visual feedback
+- **Undo/Redo**: Full drawing history with undo and redo buttons
+- **Save/Export**: Download completed artwork as PNG images
+- **Automatic Drawing Continuation**: Seamlessly resume drawing when re-entering the canvas while holding down, maintaining the original region
 
 ### Technical Stack
 
@@ -46,14 +50,16 @@ This is a Next.js 15 application using the App Router, React Server Components (
   - `BrushSettings.tsx` - Brush size and type controls (child-friendly buttons)
   - `ui/` - shadcn/ui components
 - `/lib` - Core utilities and algorithms
+  - `layerGeneration.ts` - Generate drawable layers from regions with native clipping
   - `regionDetection.ts` - Region detection using flood fill algorithm
   - `floodFill.ts` - Stack-based flood fill implementation
   - `canvasUtils.ts` - Canvas coordinate conversion and boundary detection
   - `imageLoader.ts` - Image loading utilities
   - `processImage.ts` - Image processing pipeline
+  - `constants.ts` - Application-wide constants (brush sizes, thresholds, etc.)
   - `utils.ts` - General utilities including `cn()` helper
-- `/public` - Static assets
-  - `/images` - Coloring book outline images (1000x1000px)
+- `/assets` - Static assets
+  - `/images` - Coloring book outline images (1000x1000px PNG files)
 
 ### Path Aliases
 
@@ -112,6 +118,34 @@ The project is configured for shadcn/ui components:
 Add new components using: `npx shadcn@latest add <component-name>`
 
 Components will be added to `@/components/ui` with proper path aliases already configured.
+
+## Important Implementation Details
+
+### Apple Pencil and Touch Events
+
+The Canvas component uses a dual event system to ensure reliable input across all devices:
+
+1. **Pointer Events** (primary): Standard cross-device input handling
+2. **Touch Events** (fallback): Catches quick Apple Pencil taps that Safari's Pointer API filters out
+
+Key implementation details:
+- Touch events are converted to synthetic pointer events
+- 50ms debouncing prevents double-firing when both event types fire
+- `requestAnimationFrame` used for non-blocking initial dot rendering
+- State capture optimized to only run once per stroke session
+
+### Canvas Drawing Performance
+
+- **Layer-based architecture**: Each region is a separate OffscreenCanvas with native clipping
+- **O(1) region lookup**: Uint16Array lookup table for instant region detection
+- **Non-blocking rendering**: Use `requestAnimationFrame` for drawing operations
+- **Global pointer tracking**: Window-level listeners track position only when pointer is over canvas to eliminate edge gaps
+
+### Drawing State Management
+
+- Use refs (not React state) for `activeLayer` to avoid race conditions
+- Preserve active layer when leaving/re-entering canvas to maintain region consistency
+- Clear active layer only on final pointer up, not on pointer leave
 
 ## TypeScript Configuration
 

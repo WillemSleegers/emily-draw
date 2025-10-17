@@ -7,10 +7,14 @@ A digital coloring book application designed for young children (around 3 years 
 - **Layer-based drawing architecture**: Each colorable region is a separate OffscreenCanvas with native clipping
 - **Stay-within-lines toggle**: Switch between region-locked drawing and free drawing modes
 - **Edge gap elimination**: Global pointer tracking ensures strokes reach canvas edges with no gaps
+- **Apple Pencil optimized**: Touch event fallback ensures reliable quick taps and strokes on iPad
 - **Child-friendly UI**: Large square buttons with visual-only indicators (no text labels)
-- **Touch-optimized**: Designed for iPad and touchscreen devices
+- **Touch-optimized**: Designed for iPad and touchscreen devices with proper touch-action handling
 - **Multiple brush controls**: Three sizes (small, medium, large) and two types (solid, soft blur effect)
-- **Simple color picker**: Easy color selection interface
+- **Simple color picker**: Easy color selection interface with visual feedback
+- **Undo/Redo**: Full drawing history with undo and redo support
+- **Save/Export**: Download completed artwork as PNG images
+- **Eraser tool**: White eraser for corrections
 
 ## Technical Implementation
 
@@ -37,13 +41,28 @@ Instead of checking region boundaries on every pointer move, we pre-generate sep
 
 **Solution**: Global pointer tracking
 - Track pointer position across entire page (window-level listener)
+- Only track when pointer is over canvas to avoid capturing UI interactions
 - On canvas entry: draw from last global position → entry point
 - On canvas exit: draw from last point → exit coordinates
+- Preserve active layer when leaving/re-entering to maintain region consistency
 - Line naturally crosses canvas edge with no gaps
 
 **Result**: Smooth, continuous strokes even with fast mouse movements
 
-#### 3. **Stay-Within-Lines Toggle**
+#### 3. **Apple Pencil Optimization** (`components/Canvas.tsx`)
+
+**Problem**: Safari on iPad filters out quick Apple Pencil taps from the Pointer Events API, causing intermittent failures where quick taps/strokes don't register.
+
+**Solution**: Touch event fallback system
+- Add parallel touch event listeners alongside pointer events
+- Convert touch events to synthetic pointer events
+- Debounce within 50ms to prevent double-firing
+- Use `requestAnimationFrame` for non-blocking initial dot rendering
+- Optimize state capture to reduce event handler blocking
+
+**Result**: Reliable drawing with both finger touches and Apple Pencil, even during very quick taps and short strokes
+
+#### 4. **Stay-Within-Lines Toggle**
 
 Two drawing modes with simple visual toggle:
 - **Region-locked mode** (Shapes icon): Layer-based drawing with clipping
@@ -125,14 +144,25 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 - **Tailwind CSS v4** with OKLCH color space
 - **HTML Canvas API** for drawing and pixel manipulation
 
+## Device Compatibility
+
+This app is optimized for:
+- **iPad with Apple Pencil** (primary target device)
+- iPad with finger touch
+- Desktop browsers with mouse
+- Other touchscreen tablets
+
 ## Future Enhancements
 
 - ✅ ~~Color picker UI~~ (Completed)
 - ✅ ~~Multiple brush sizes~~ (Completed)
 - ✅ ~~Stay-within-lines toggle~~ (Completed)
+- ✅ ~~Undo/Redo functionality~~ (Completed)
+- ✅ ~~Save/export artwork~~ (Completed)
+- ✅ ~~Eraser tool~~ (Completed)
+- ✅ ~~Apple Pencil optimization~~ (Completed)
 - Per-region undo/redo functionality
 - Clear individual regions
 - Region opacity controls
-- Save/export artwork
 - More coloring book images
 - Animations and sound effects for children
