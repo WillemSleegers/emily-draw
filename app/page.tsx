@@ -9,6 +9,7 @@ import { processImage, type ProcessedImageData } from "@/lib/processImage"
 
 import atomImage from "@/assets/images/atom.png"
 import balloonImage from "@/assets/images/balloon.png"
+import candyImage from "@/assets/images/candy.png"
 import candyCaneImage from "@/assets/images/candy-cane.png"
 import circleImage from "@/assets/images/circle.png"
 import elephantImage from "@/assets/images/elephant.png"
@@ -31,14 +32,15 @@ const IMAGES = [
   { id: 4, name: "Star", src: starImage },
   { id: 5, name: "Balloon", src: balloonImage },
   { id: 6, name: "Ice Cream", src: icecreamImage },
-  { id: 7, name: "Candy Cane", src: candyCaneImage },
-  { id: 8, name: "Puzzle", src: puzzleImage },
-  { id: 9, name: "Atom", src: atomImage },
-  { id: 10, name: "Elephant", src: elephantImage },
-  { id: 11, name: "Paw Print", src: pawImage },
-  { id: 12, name: "Seaweed", src: seaweedImage },
-  { id: 13, name: "Snowflake", src: snowflakeImage },
-  { id: 14, name: "Sun", src: sunImage },
+  { id: 7, name: "Candy", src: candyImage },
+  { id: 8, name: "Candy Cane", src: candyCaneImage },
+  { id: 9, name: "Puzzle", src: puzzleImage },
+  { id: 10, name: "Atom", src: atomImage },
+  { id: 11, name: "Elephant", src: elephantImage },
+  { id: 12, name: "Paw Print", src: pawImage },
+  { id: 13, name: "Seaweed", src: seaweedImage },
+  { id: 14, name: "Snowflake", src: snowflakeImage },
+  { id: 15, name: "Sun", src: sunImage },
 ]
 
 export default function Home() {
