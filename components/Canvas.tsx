@@ -61,7 +61,7 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
 
   // Performance profiling (only active when DEBUG_PERFORMANCE is true)
   const frameCountRef = useRef(0)
-  const lastFpsTimeRef = useRef(Date.now())
+  const lastFpsTimeRef = useRef<number | null>(null)
   const performanceMetrics = useRef({
     drawStrokeTime: 0,
     totalMoveTime: 0,
@@ -411,6 +411,9 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
       // Log FPS and metrics periodically
       frameCountRef.current++
       const now = Date.now()
+      if (lastFpsTimeRef.current === null) {
+        lastFpsTimeRef.current = now
+      }
       if (now - lastFpsTimeRef.current >= FPS_LOG_INTERVAL_MS) {
         const fps = frameCountRef.current
         const metrics = performanceMetrics.current
