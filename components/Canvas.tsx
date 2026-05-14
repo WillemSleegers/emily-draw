@@ -16,11 +16,7 @@ import {
   type LayerLookupTable,
 } from "@/lib/layerGeneration"
 import type { BrushType } from "./BrushSettings"
-import {
-  SIGNIFICANT_MOVEMENT_THRESHOLD,
-  FPS_LOG_INTERVAL_MS,
-  MAX_HISTORY,
-} from "@/lib/constants"
+import { FPS_LOG_INTERVAL_MS, MAX_HISTORY } from "@/lib/constants"
 
 interface CanvasProps {
   layers: DrawingLayer[]
@@ -64,7 +60,6 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
   const [isDrawing, setIsDrawing] = useState(false)
   const activeLayerRef = useRef<DrawingLayer | null>(null)
   const lastPointRef = useRef<{ x: number; y: number } | null>(null)
-  const hasMovedRef = useRef(false)
   const hasStateCapturedRef = useRef(false)
 
   // Global pointer position tracking (for edge gap fix)
@@ -381,7 +376,6 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
 
     setIsDrawing(true)
     lastPointRef.current = coords
-    hasMovedRef.current = false
 
     // Draw initial dot immediately to ensure quick taps are always visible.
     // Use requestAnimationFrame to not block the event handler.
@@ -431,14 +425,6 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
       return
     }
 
-    // Calculate distance moved to detect actual movement vs. jitter
-    const dx = coords.x - lastPoint.x
-    const dy = coords.y - lastPoint.y
-    const distance = Math.sqrt(dx * dx + dy * dy)
-
-    // Only mark as moved if distance is significant
-    const significantMovement = distance > SIGNIFICANT_MOVEMENT_THRESHOLD
-
     if (stayWithinLines) {
       // Region-locked drawing with clipping (canvas updates automatically)
       const layer = activeLayerRef.current
@@ -448,7 +434,6 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
         if (DEBUG_PERFORMANCE) {
           performanceMetrics.current.drawStrokeTime += performance.now() - drawStart
         }
-        if (significantMovement) hasMovedRef.current = true
       }
     } else {
       // Free drawing: draw on every layer the segment overlaps
@@ -461,7 +446,6 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
       if (DEBUG_PERFORMANCE) {
         performanceMetrics.current.drawStrokeTime += performance.now() - drawStart
       }
-      if (significantMovement) hasMovedRef.current = true
     }
 
     // Performance tracking (only when DEBUG_PERFORMANCE is enabled)
@@ -519,7 +503,6 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     hasStateCapturedRef.current = false
     lastPointRef.current = null
     lastGlobalPositionRef.current = null
-    hasMovedRef.current = false
   }
 
   const handlePointerUpPreserveLayer = () => {
@@ -532,7 +515,6 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     // Don't clear activeLayerRef - preserve it for re-entry
     lastPointRef.current = null
     lastGlobalPositionRef.current = null
-    hasMovedRef.current = false
   }
 
   const handlePointerLeave = (event: React.PointerEvent<HTMLDivElement>) => {

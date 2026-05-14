@@ -9,9 +9,6 @@ export const CANVAS_SIZE = 1000
 export const BOUNDARY_THRESHOLD = 128
 export const MIN_REGION_SIZE = 100
 
-// Drawing behavior
-export const SIGNIFICANT_MOVEMENT_THRESHOLD = 2
-
 // Layer lookup table sentinel value
 export const NO_LAYER_SENTINEL = 65535
 

@@ -62,14 +62,17 @@ Remaining items are follow-ups.
 
 ### Code Cleanup (Low Risk)
 
-- [ ] Remove dead code: `scanlineFill`, `floodFill`, `hexToRgb`/`rgbToHex`,
-      `isInBounds`, and `hasMovedRef` (written but never read).
-      (`getRegionAt`/`getRegionAtWithTolerance` already removed in the
+- [x] Removed dead code: `scanlineFill`, `floodFill` (+ orphaned
+      `setPixelColor`/`colorsMatch`), `hexToRgb`/`rgbToHex`, `isInBounds`,
+      `hasMovedRef`, and its now-dead `SIGNIFICANT_MOVEMENT_THRESHOLD` jitter
+      block. `lib/floodFill.ts` was left holding only `RGB`/`Point`/
+      `getPixelColor`, so it was renamed to `lib/pixels.ts`.
+      (`getRegionAt`/`getRegionAtWithTolerance` were removed earlier in the
       `Int32Array` pass.)
 - [x] Removed the redundant `visited` Set in `floodFillRegion` — `pixelToRegion`
       already tracks visited state. (`lib/regionDetection.ts`)
-- [ ] De-duplicate `BRUSH_SIZES` (defined in both `lib/constants.ts` and
-      `components/BrushSettings.tsx`).
+- [x] De-duplicated `BRUSH_SIZES` — `lib/constants.ts` is now the single source
+      of truth; `components/BrushSettings.tsx` imports it.
 - [ ] Replace the brittle synthetic-event casts in the touch handlers
       (`{...} as React.PointerEvent`) with a proper shared input type.
 

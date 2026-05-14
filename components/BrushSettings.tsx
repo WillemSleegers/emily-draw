@@ -1,6 +1,7 @@
 "use client"
 
 import { ShapesIcon, PencilIcon, EraserIcon } from "lucide-react"
+import { BRUSH_SIZES } from "@/lib/constants"
 
 export type BrushType = "solid" | "soft"
 export type BrushSize = "small" | "medium" | "large"
@@ -14,12 +15,6 @@ interface BrushSettingsProps {
   onEraserChange: (value: boolean) => void
   stayWithinLines: boolean
   onStayWithinLinesChange: (value: boolean) => void
-}
-
-const BRUSH_SIZES = {
-  small: 10,
-  medium: 25,
-  large: 50,
 }
 
 export default function BrushSettings({
