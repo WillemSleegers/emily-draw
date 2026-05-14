@@ -18,6 +18,9 @@ export const NO_LAYER_SENTINEL = 65535
 // Performance monitoring
 export const FPS_LOG_INTERVAL_MS = 1000
 
+// Maximum number of undo/redo snapshots retained (caps history memory)
+export const MAX_HISTORY = 30
+
 // Alpha channel values
 export const OPAQUE_ALPHA = 255
 export const TRANSPARENT_ALPHA = 0

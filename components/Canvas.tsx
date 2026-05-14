@@ -1,6 +1,13 @@
 "use client"
 
-import { useEffect, useRef, useState, useImperativeHandle, forwardRef } from "react"
+import {
+  useEffect,
+  useRef,
+  useState,
+  useMemo,
+  useImperativeHandle,
+  forwardRef,
+} from "react"
 import { getCanvasCoordinates } from "@/lib/canvasUtils"
 import {
   findLayerAtPoint,
@@ -9,7 +16,11 @@ import {
   type LayerLookupTable,
 } from "@/lib/layerGeneration"
 import type { BrushType } from "./BrushSettings"
-import { SIGNIFICANT_MOVEMENT_THRESHOLD, FPS_LOG_INTERVAL_MS } from "@/lib/constants"
+import {
+  SIGNIFICANT_MOVEMENT_THRESHOLD,
+  FPS_LOG_INTERVAL_MS,
+  MAX_HISTORY,
+} from "@/lib/constants"
 
 interface CanvasProps {
   layers: DrawingLayer[]
@@ -33,6 +44,9 @@ export interface CanvasRef {
 
 // Performance debugging flag - set to true only during development
 const DEBUG_PERFORMANCE = false
+
+// A history entry: the "before" pixels of every layer the stroke touched.
+type HistoryEntry = Map<number, ImageData>
 
 const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
   layers,
@@ -68,29 +82,46 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     sampleCount: 0,
   })
 
-  // Undo/redo history - store ImageData snapshots
-  const undoStackRef = useRef<Map<number, ImageData>[]>([])
-  const redoStackRef = useRef<Map<number, ImageData>[]>([])
+  // Undo/redo history - capped stacks of per-layer ImageData snapshots
+  const undoStackRef = useRef<HistoryEntry[]>([])
+  const redoStackRef = useRef<HistoryEntry[]>([])
 
-  // Capture current state of all layers
-  const captureState = (): Map<number, ImageData> => {
-    const state = new Map<number, ImageData>()
+  // O(1) layer lookup by id, for restoring history snapshots
+  const layerById = useMemo(() => {
+    const map = new Map<number, DrawingLayer>()
+    layers.forEach((layer) => map.set(layer.id, layer))
+    return map
+  }, [layers])
+
+  // Capture the current pixels of the given layers (or all layers if omitted).
+  const captureState = (layerIds?: Set<number>): HistoryEntry => {
+    const state: HistoryEntry = new Map()
     layers.forEach((layer) => {
-      const imageData = layer.ctx.getImageData(0, 0, layer.canvas.width, layer.canvas.height)
-      state.set(layer.id, imageData)
+      if (layerIds && !layerIds.has(layer.id)) return
+      state.set(
+        layer.id,
+        layer.ctx.getImageData(0, 0, layer.canvas.width, layer.canvas.height)
+      )
     })
     return state
   }
 
-  // Restore state to all layers
-  const restoreState = (state: Map<number, ImageData>) => {
-    layers.forEach((layer) => {
-      const imageData = state.get(layer.id)
-      if (imageData) {
-        layer.ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height)
-        layer.ctx.putImageData(imageData, 0, 0)
-      }
+  // Restore a history snapshot - only the layers it contains are touched.
+  const restoreState = (state: HistoryEntry) => {
+    state.forEach((imageData, layerId) => {
+      const layer = layerById.get(layerId)
+      if (!layer) return
+      layer.ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height)
+      layer.ctx.putImageData(imageData, 0, 0)
     })
+  }
+
+  // Push to the undo stack, capping its size to bound memory use.
+  const pushUndo = (entry: HistoryEntry) => {
+    undoStackRef.current.push(entry)
+    if (undoStackRef.current.length > MAX_HISTORY) {
+      undoStackRef.current.shift()
+    }
   }
 
   // Expose undo/redo methods via ref
@@ -98,63 +129,58 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     undo: () => {
       if (undoStackRef.current.length === 0) return
 
-      // Save current state to redo stack
-      const currentState = captureState()
-      redoStackRef.current.push(currentState)
-
-      // Pop and restore from undo stack
+      // Pop the snapshot to restore, and save the current state of exactly the
+      // layers it will change onto the redo stack.
       const stateToRestore = undoStackRef.current.pop()!
-      restoreState(stateToRestore)
+      const affected = new Set(stateToRestore.keys())
+      redoStackRef.current.push(captureState(affected))
+      if (redoStackRef.current.length > MAX_HISTORY) {
+        redoStackRef.current.shift()
+      }
 
-      // Notify parent of history change
+      restoreState(stateToRestore)
       onHistoryChange?.()
     },
     redo: () => {
       if (redoStackRef.current.length === 0) return
 
-      // Save current state to undo stack
-      const currentState = captureState()
-      undoStackRef.current.push(currentState)
-
-      // Pop and restore from redo stack
       const stateToRestore = redoStackRef.current.pop()!
-      restoreState(stateToRestore)
+      const affected = new Set(stateToRestore.keys())
+      pushUndo(captureState(affected))
 
-      // Notify parent of history change
+      restoreState(stateToRestore)
       onHistoryChange?.()
     },
     canUndo: () => undoStackRef.current.length > 0,
     canRedo: () => redoStackRef.current.length > 0,
     clear: () => {
-      // Save current state to undo stack before clearing
-      const currentState = captureState()
-      undoStackRef.current.push(currentState)
-      redoStackRef.current = [] // Clear redo stack
+      // Clearing touches every layer, so snapshot all of them.
+      pushUndo(captureState())
+      redoStackRef.current = []
 
-      // Clear all layers and restore the white mask background
+      // Clear all layers and restore the white mask background.
       layers.forEach((layer) => {
         layer.ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height)
-        // Restore the white mask pixels that define the drawable region
+        // Restore the white mask pixels that define the drawable region.
         layer.ctx.putImageData(layer.mask, 0, 0)
       })
 
-      // Notify parent of history change
       onHistoryChange?.()
     },
     save: (outlineImage?: HTMLImageElement) => {
       if (layers.length === 0) return ""
 
-      // Create a temporary canvas to composite all layers
+      // Composite all bounding-box layers onto a full-size canvas.
       const tempCanvas = document.createElement("canvas")
-      tempCanvas.width = layers[0].canvas.width
-      tempCanvas.height = layers[0].canvas.height
+      tempCanvas.width = lookupTable.width
+      tempCanvas.height = lookupTable.height
       const tempCtx = tempCanvas.getContext("2d")
 
       if (!tempCtx) return ""
 
-      // Composite all layers onto the temp canvas
+      // Each layer canvas is drawn at its bounding-box offset.
       layers.forEach((layer) => {
-        tempCtx.drawImage(layer.canvas, 0, 0)
+        tempCtx.drawImage(layer.canvas, layer.offsetX, layer.offsetY)
       })
 
       // If outline image is provided, draw it on top
@@ -167,7 +193,7 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     },
   }))
 
-  // Mount layer canvases into the DOM
+  // Mount layer canvases into the DOM, positioned at their bounding boxes
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
@@ -177,29 +203,30 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
       container.removeChild(container.firstChild)
     }
 
-    // Append each layer canvas to the container
+    // Append each layer canvas, positioned/sized to its bounding box as a
+    // percentage of the full image.
     layers.forEach((layer) => {
-      layer.canvas.style.position = "absolute"
-      layer.canvas.style.top = "0"
-      layer.canvas.style.left = "0"
-      layer.canvas.style.width = "100%"
-      layer.canvas.style.height = "100%"
-      layer.canvas.style.pointerEvents = "none"
+      const style = layer.canvas.style
+      style.position = "absolute"
+      style.left = `${(layer.offsetX / lookupTable.width) * 100}%`
+      style.top = `${(layer.offsetY / lookupTable.height) * 100}%`
+      style.width = `${(layer.width / lookupTable.width) * 100}%`
+      style.height = `${(layer.height / lookupTable.height) * 100}%`
+      style.pointerEvents = "none"
       container.appendChild(layer.canvas)
     })
 
-    // Initialize empty undo/redo stacks
-    // We'll capture state when drawing starts
+    // Reset undo/redo stacks when the layer set changes (new image)
     undoStackRef.current = []
     redoStackRef.current = []
 
-    // Cleanup function to remove canvases when component unmounts or layers change
+    // Cleanup: remove canvases when the component unmounts or layers change
     return () => {
       while (container.firstChild) {
         container.removeChild(container.firstChild)
       }
     }
-  }, [layers])
+  }, [layers, lookupTable])
 
   // Track global pointer position to fix edge gaps on fast entry
   useEffect(() => {
@@ -217,9 +244,12 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
           event.clientY <= rect.bottom
 
         if (isOverCanvas) {
-          // Convert global coordinates to canvas coordinates
-          const coords = getCanvasCoordinates(layers[0].canvas, event)
-          lastGlobalPositionRef.current = coords
+          lastGlobalPositionRef.current = getCanvasCoordinates(
+            containerRef.current,
+            lookupTable.width,
+            lookupTable.height,
+            event
+          )
         }
       }
     }
@@ -228,7 +258,7 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     return () => {
       window.removeEventListener("pointermove", handleGlobalPointerMove)
     }
-  }, [layers])
+  }, [layers, lookupTable])
 
   // Apply brush settings to a context
   const applyBrushSettings = (ctx: CanvasRenderingContext2D) => {
@@ -250,6 +280,61 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     }
   }
 
+  // Draw a single dot on a layer, in layer-local coordinates.
+  const drawDotOnLayer = (layer: DrawingLayer, x: number, y: number) => {
+    const color = isEraser ? "#FFFFFF" : fillColor
+    drawStrokeWithClipping(layer.ctx, (ctx) => {
+      ctx.fillStyle = color
+      ctx.globalAlpha = 1.0
+
+      if (brushType === "soft" && !isEraser) {
+        ctx.shadowBlur = brushSize * 0.5
+        ctx.shadowColor = color
+      } else {
+        ctx.shadowBlur = 0
+      }
+
+      ctx.beginPath()
+      ctx.arc(x - layer.offsetX, y - layer.offsetY, brushSize / 2, 0, Math.PI * 2)
+      ctx.fill()
+    })
+  }
+
+  // Draw a line segment on a layer, translating to layer-local coordinates.
+  const drawSegmentOnLayer = (
+    layer: DrawingLayer,
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number
+  ) => {
+    drawStrokeWithClipping(layer.ctx, (ctx) => {
+      applyBrushSettings(ctx)
+      ctx.beginPath()
+      ctx.moveTo(x0 - layer.offsetX, y0 - layer.offsetY)
+      ctx.lineTo(x1 - layer.offsetX, y1 - layer.offsetY)
+      ctx.stroke()
+    })
+  }
+
+  // Cheap bounding-box reject so free-draw doesn't touch every layer per
+  // segment - only layers the stroke could actually paint into.
+  const segmentTouchesLayer = (
+    layer: DrawingLayer,
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number
+  ) => {
+    const pad = brushSize // generous padding for line width + soft-brush blur
+    return (
+      Math.min(x0, x1) - pad <= layer.offsetX + layer.width &&
+      Math.max(x0, x1) + pad >= layer.offsetX &&
+      Math.min(y0, y1) - pad <= layer.offsetY + layer.height &&
+      Math.max(y0, y1) + pad >= layer.offsetY
+    )
+  }
+
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault()
 
@@ -261,8 +346,12 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     const container = containerRef.current
     if (!container || layers.length === 0) return
 
-    // Use first layer canvas for coordinate calculation
-    const coords = getCanvasCoordinates(layers[0].canvas, event)
+    const coords = getCanvasCoordinates(
+      container,
+      lookupTable.width,
+      lookupTable.height,
+      event
+    )
 
     let targetLayer: DrawingLayer | null = null
 
@@ -277,10 +366,15 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
       activeLayerRef.current = null
     }
 
-    // Capture state BEFORE starting to draw (only once per stroke session)
+    // Capture undo state BEFORE starting to draw (only once per stroke session).
+    // Region-locked strokes only ever touch one layer, so snapshot just that
+    // layer; free drawing can touch many, so snapshot all of them.
     if (!hasStateCapturedRef.current) {
-      const beforeState = captureState()
-      undoStackRef.current.push(beforeState)
+      const beforeState =
+        stayWithinLines && targetLayer
+          ? captureState(new Set([targetLayer.id]))
+          : captureState()
+      pushUndo(beforeState)
       redoStackRef.current = [] // Clear redo stack on new action
       hasStateCapturedRef.current = true
     }
@@ -289,52 +383,28 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     lastPointRef.current = coords
     hasMovedRef.current = false
 
-    // Draw initial dot immediately to ensure quick taps are always visible
-    // Use requestAnimationFrame to not block the event handler
-    const color = isEraser ? "#FFFFFF" : fillColor
-    const currentLayer = targetLayer
+    // Draw initial dot immediately to ensure quick taps are always visible.
+    // Use requestAnimationFrame to not block the event handler.
+    const dotCoords = coords
+    const dotLayer = targetLayer
 
     requestAnimationFrame(() => {
-      if (stayWithinLines && currentLayer) {
-        // Region-locked: draw dot on target layer
-        drawStrokeWithClipping(
-          currentLayer.canvas,
-          currentLayer.ctx,
-          currentLayer.mask,
-          (ctx) => {
-            ctx.fillStyle = color
-            ctx.globalAlpha = 1.0
-
-            // Apply shadow for soft brush (but not for eraser)
-            if (brushType === "soft" && !isEraser) {
-              ctx.shadowBlur = brushSize * 0.5
-              ctx.shadowColor = color
-            } else {
-              ctx.shadowBlur = 0
-            }
-
-            ctx.beginPath()
-            ctx.arc(coords.x, coords.y, brushSize / 2, 0, Math.PI * 2)
-            ctx.fill()
-          }
-        )
-      } else if (!stayWithinLines) {
-        // Free drawing: draw dot on all layers
+      if (stayWithinLines) {
+        if (dotLayer) drawDotOnLayer(dotLayer, dotCoords.x, dotCoords.y)
+      } else {
+        // Free drawing: draw the dot on every layer it overlaps
         layers.forEach((layer) => {
-          layer.ctx.fillStyle = color
-          layer.ctx.globalAlpha = 1.0
-
-          // Apply shadow for soft brush (but not for eraser)
-          if (brushType === "soft" && !isEraser) {
-            layer.ctx.shadowBlur = brushSize * 0.5
-            layer.ctx.shadowColor = color
-          } else {
-            layer.ctx.shadowBlur = 0
+          if (
+            segmentTouchesLayer(
+              layer,
+              dotCoords.x,
+              dotCoords.y,
+              dotCoords.x,
+              dotCoords.y
+            )
+          ) {
+            drawDotOnLayer(layer, dotCoords.x, dotCoords.y)
           }
-
-          layer.ctx.beginPath()
-          layer.ctx.arc(coords.x, coords.y, brushSize / 2, 0, Math.PI * 2)
-          layer.ctx.fill()
         })
       }
     })
@@ -348,7 +418,12 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
 
     const moveStart = DEBUG_PERFORMANCE ? performance.now() : 0
 
-    const coords = getCanvasCoordinates(layers[0].canvas, event)
+    const coords = getCanvasCoordinates(
+      container,
+      lookupTable.width,
+      lookupTable.height,
+      event
+    )
     const lastPoint = lastPointRef.current
 
     if (!lastPoint) {
@@ -364,40 +439,27 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     // Only mark as moved if distance is significant
     const significantMovement = distance > SIGNIFICANT_MOVEMENT_THRESHOLD
 
-    if (stayWithinLines && activeLayerRef.current) {
-      // Region-locked drawing with clipping (layer canvas updates automatically in DOM)
-      const drawStart = DEBUG_PERFORMANCE ? performance.now() : 0
+    if (stayWithinLines) {
+      // Region-locked drawing with clipping (canvas updates automatically)
       const layer = activeLayerRef.current
-      drawStrokeWithClipping(
-        layer.canvas,
-        layer.ctx,
-        layer.mask,
-        (ctx) => {
-          applyBrushSettings(ctx)
-          ctx.beginPath()
-          ctx.moveTo(lastPoint.x, lastPoint.y)
-          ctx.lineTo(coords.x, coords.y)
-          ctx.stroke()
+      if (layer) {
+        const drawStart = DEBUG_PERFORMANCE ? performance.now() : 0
+        drawSegmentOnLayer(layer, lastPoint.x, lastPoint.y, coords.x, coords.y)
+        if (DEBUG_PERFORMANCE) {
+          performanceMetrics.current.drawStrokeTime += performance.now() - drawStart
         }
-      )
-      if (DEBUG_PERFORMANCE) {
-        const drawEnd = performance.now()
-        performanceMetrics.current.drawStrokeTime += drawEnd - drawStart
+        if (significantMovement) hasMovedRef.current = true
       }
-      if (significantMovement) hasMovedRef.current = true
-    } else if (!stayWithinLines) {
-      // Free drawing on all layers
+    } else {
+      // Free drawing: draw on every layer the segment overlaps
       const drawStart = DEBUG_PERFORMANCE ? performance.now() : 0
       layers.forEach((layer) => {
-        applyBrushSettings(layer.ctx)
-        layer.ctx.beginPath()
-        layer.ctx.moveTo(lastPoint.x, lastPoint.y)
-        layer.ctx.lineTo(coords.x, coords.y)
-        layer.ctx.stroke()
+        if (segmentTouchesLayer(layer, lastPoint.x, lastPoint.y, coords.x, coords.y)) {
+          drawSegmentOnLayer(layer, lastPoint.x, lastPoint.y, coords.x, coords.y)
+        }
       })
       if (DEBUG_PERFORMANCE) {
-        const drawEnd = performance.now()
-        performanceMetrics.current.drawStrokeTime += drawEnd - drawStart
+        performanceMetrics.current.drawStrokeTime += performance.now() - drawStart
       }
       if (significantMovement) hasMovedRef.current = true
     }
@@ -482,7 +544,12 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     }
 
     // Get exit coordinates
-    const exitCoords = getCanvasCoordinates(layers[0].canvas, event)
+    const exitCoords = getCanvasCoordinates(
+      container,
+      lookupTable.width,
+      lookupTable.height,
+      event
+    )
     const lastPoint = lastPointRef.current
 
     // Draw final stroke to exit point if we have a last point
@@ -490,29 +557,37 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
       lastPoint &&
       (lastPoint.x !== exitCoords.x || lastPoint.y !== exitCoords.y)
     ) {
-      if (stayWithinLines && activeLayerRef.current) {
-        // Region-locked drawing with clipping (canvas updates automatically in DOM)
+      if (stayWithinLines) {
         const layer = activeLayerRef.current
-        drawStrokeWithClipping(
-          layer.canvas,
-          layer.ctx,
-          layer.mask,
-          (ctx) => {
-            applyBrushSettings(ctx)
-            ctx.beginPath()
-            ctx.moveTo(lastPoint.x, lastPoint.y)
-            ctx.lineTo(exitCoords.x, exitCoords.y)
-            ctx.stroke()
-          }
-        )
-      } else if (!stayWithinLines) {
-        // Free drawing on all layers
+        if (layer) {
+          drawSegmentOnLayer(
+            layer,
+            lastPoint.x,
+            lastPoint.y,
+            exitCoords.x,
+            exitCoords.y
+          )
+        }
+      } else {
+        // Free drawing on every overlapping layer
         layers.forEach((layer) => {
-          applyBrushSettings(layer.ctx)
-          layer.ctx.beginPath()
-          layer.ctx.moveTo(lastPoint.x, lastPoint.y)
-          layer.ctx.lineTo(exitCoords.x, exitCoords.y)
-          layer.ctx.stroke()
+          if (
+            segmentTouchesLayer(
+              layer,
+              lastPoint.x,
+              lastPoint.y,
+              exitCoords.x,
+              exitCoords.y
+            )
+          ) {
+            drawSegmentOnLayer(
+              layer,
+              lastPoint.x,
+              lastPoint.y,
+              exitCoords.x,
+              exitCoords.y
+            )
+          }
         })
       }
     }
@@ -525,51 +600,44 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     const container = containerRef.current
     if (!container || layers.length === 0) return
 
-    // Check if pointer button is still pressed (buttons === 1 means primary button down)
-    if (event.buttons === 1) {
-      const coords = getCanvasCoordinates(layers[0].canvas, event)
+    // Check if pointer button is still pressed (buttons === 1 means primary down)
+    if (event.buttons !== 1) return
 
-      // If we have an active layer from before leaving, continue using it
-      // Don't find a new layer - this preserves the original drawing region
-      const currentLayer = activeLayerRef.current
+    const coords = getCanvasCoordinates(
+      container,
+      lookupTable.width,
+      lookupTable.height,
+      event
+    )
+    const globalPos = lastGlobalPositionRef.current
 
-      if (stayWithinLines && currentLayer) {
-        // Continue drawing on the same layer we started with
-        const globalPos = lastGlobalPositionRef.current
-        if (
-          globalPos &&
-          (globalPos.x !== coords.x || globalPos.y !== coords.y)
-        ) {
-          drawStrokeWithClipping(currentLayer.canvas, currentLayer.ctx, currentLayer.mask, (ctx) => {
-            applyBrushSettings(ctx)
-            ctx.beginPath()
-            ctx.moveTo(globalPos.x, globalPos.y)
-            ctx.lineTo(coords.x, coords.y)
-            ctx.stroke()
-          })
-        }
-      } else if (!stayWithinLines) {
-        // Free drawing: draw on all layers
-        const globalPos = lastGlobalPositionRef.current
-        if (
-          globalPos &&
-          (globalPos.x !== coords.x || globalPos.y !== coords.y)
-        ) {
-          layers.forEach((layer) => {
-            applyBrushSettings(layer.ctx)
-            layer.ctx.beginPath()
-            layer.ctx.moveTo(globalPos.x, globalPos.y)
-            layer.ctx.lineTo(coords.x, coords.y)
-            layer.ctx.stroke()
-          })
-        }
+    if (stayWithinLines) {
+      // Continue drawing on the same layer we started with - don't find a new
+      // one, so the original drawing region is preserved across re-entry.
+      const layer = activeLayerRef.current
+      if (
+        layer &&
+        globalPos &&
+        (globalPos.x !== coords.x || globalPos.y !== coords.y)
+      ) {
+        drawSegmentOnLayer(layer, globalPos.x, globalPos.y, coords.x, coords.y)
       }
+    } else if (
+      globalPos &&
+      (globalPos.x !== coords.x || globalPos.y !== coords.y)
+    ) {
+      // Free drawing: draw on every overlapping layer
+      layers.forEach((layer) => {
+        if (segmentTouchesLayer(layer, globalPos.x, globalPos.y, coords.x, coords.y)) {
+          drawSegmentOnLayer(layer, globalPos.x, globalPos.y, coords.x, coords.y)
+        }
+      })
+    }
 
-      // Resume drawing only if we have a layer to draw on
-      if (activeLayerRef.current || !stayWithinLines) {
-        setIsDrawing(true)
-        lastPointRef.current = coords
-      }
+    // Resume drawing only if we have a layer to draw on
+    if (activeLayerRef.current || !stayWithinLines) {
+      setIsDrawing(true)
+      lastPointRef.current = coords
     }
   }
 
@@ -617,7 +685,7 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     <>
       <div
         ref={containerRef}
-        className="aspect-square"
+        className="aspect-square relative"
         style={{ touchAction: 'none' }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}

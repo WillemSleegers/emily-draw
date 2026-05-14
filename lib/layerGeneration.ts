@@ -1,16 +1,29 @@
 /**
  * Layer Generation System
- * Converts region map into drawable layers with clipping masks
+ * Converts a region map into drawable layers with clipping masks.
+ *
+ * Each layer is sized to its region's bounding box (not the full image), so
+ * memory scales with the area actually covered by regions rather than
+ * regionCount x fullImageArea. A 1000x1000 image with 40 regions used to need
+ * ~320 MB of layer backing store; bounding-box layers bring that down roughly
+ * to the image area itself.
  */
 
 import type { RegionMap } from "./regionDetection";
-import { NO_LAYER_SENTINEL, OPAQUE_ALPHA, TRANSPARENT_ALPHA } from "./constants";
+import { NO_LAYER_SENTINEL, OPAQUE_ALPHA } from "./constants";
 
 export interface DrawingLayer {
   id: number;
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
+  /** Clipping mask, sized to the bounding box (not the full image). */
   mask: ImageData;
+  /** Bounding-box origin in full-image coordinates. */
+  offsetX: number;
+  offsetY: number;
+  /** Bounding-box dimensions (also the canvas/mask dimensions). */
+  width: number;
+  height: number;
 }
 
 export interface LayerLookupTable {
@@ -19,54 +32,71 @@ export interface LayerLookupTable {
   data: Uint16Array; // Maps linear pixel index to layer index (0-based, 65535 = no layer)
 }
 
-
 /**
- * Generate layer metadata from a region map
- * Each layer represents one fillable region with a clipping mask
+ * Generate layer metadata from a region map.
+ * Each layer represents one fillable region, with a canvas + clipping mask
+ * cropped to that region's bounding box.
  */
 export function generateLayers(regionMap: RegionMap): DrawingLayer[] {
-  const layers: DrawingLayer[] = [];
   const { width, height, regionCount, pixelToRegion } = regionMap;
 
-  // Create layer metadata for each region
+  // Pass 1: compute the bounding box of every region in a single scan.
+  const minX = new Int32Array(regionCount + 1).fill(width);
+  const minY = new Int32Array(regionCount + 1).fill(height);
+  const maxX = new Int32Array(regionCount + 1).fill(-1);
+  const maxY = new Int32Array(regionCount + 1).fill(-1);
+
+  for (let y = 0; y < height; y++) {
+    const rowBase = y * width;
+    for (let x = 0; x < width; x++) {
+      const id = pixelToRegion[rowBase + x];
+      if (id <= 0) continue; // boundary (-1) or unassigned (0)
+      if (x < minX[id]) minX[id] = x;
+      if (x > maxX[id]) maxX[id] = x;
+      if (y < minY[id]) minY[id] = y;
+      if (y > maxY[id]) maxY[id] = y;
+    }
+  }
+
+  // Pass 2: build a cropped canvas + mask for each region.
+  const layers: DrawingLayer[] = [];
   for (let regionId = 1; regionId <= regionCount; regionId++) {
-    // Create mask ImageData for this region
-    const mask = new ImageData(width, height);
+    if (maxX[regionId] < 0) continue; // region had no pixels (defensive)
 
-    // Fill mask: white (255) for pixels in this region, transparent (0) for others
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const pixelRegionId = pixelToRegion[y][x];
-        const idx = (y * width + x) * 4;
+    const offsetX = minX[regionId];
+    const offsetY = minY[regionId];
+    const w = maxX[regionId] - offsetX + 1;
+    const h = maxY[regionId] - offsetY + 1;
 
-        if (pixelRegionId === regionId) {
-          // This pixel belongs to this region - make it opaque in the mask
+    // Mask: opaque where the pixel belongs to this region, transparent
+    // elsewhere. ImageData is zero-initialised, so only opaque pixels need
+    // writing.
+    const mask = new ImageData(w, h);
+    for (let y = 0; y < h; y++) {
+      const rowBase = (offsetY + y) * width;
+      for (let x = 0; x < w; x++) {
+        if (pixelToRegion[rowBase + offsetX + x] === regionId) {
+          const idx = (y * w + x) * 4;
           mask.data[idx] = OPAQUE_ALPHA;
           mask.data[idx + 1] = OPAQUE_ALPHA;
           mask.data[idx + 2] = OPAQUE_ALPHA;
           mask.data[idx + 3] = OPAQUE_ALPHA;
-        } else {
-          // Not in this region - keep transparent
-          mask.data[idx] = TRANSPARENT_ALPHA;
-          mask.data[idx + 1] = TRANSPARENT_ALPHA;
-          mask.data[idx + 2] = TRANSPARENT_ALPHA;
-          mask.data[idx + 3] = TRANSPARENT_ALPHA;
         }
       }
     }
 
-    // Create HTML canvas element for this layer
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d', { willReadFrequently: false });
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    // willReadFrequently: undo/redo reads this canvas back via getImageData.
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
 
     if (!ctx) {
       throw new Error(`Failed to get 2D context for layer ${regionId}`);
     }
 
-    // Put the white mask pixels on the canvas ONCE during initialization
-    // This allows us to use source-atop for clipping without temp canvases
+    // Paint the white mask pixels once so source-atop clipping works without a
+    // temp canvas (see drawStrokeWithClipping).
     ctx.putImageData(mask, 0, 0);
 
     layers.push({
@@ -74,6 +104,10 @@ export function generateLayers(regionMap: RegionMap): DrawingLayer[] {
       canvas,
       ctx,
       mask,
+      offsetX,
+      offsetY,
+      width: w,
+      height: h,
     });
   }
 
@@ -81,31 +115,31 @@ export function generateLayers(regionMap: RegionMap): DrawingLayer[] {
 }
 
 /**
- * Draw a stroke on a layer with clipping applied
- * Uses source-atop to only draw where the mask pixels exist (no temp canvas needed!)
+ * Draw a stroke on a layer, clipped to the layer's region.
+ *
+ * source-atop only paints where opaque pixels already exist (the mask pixels
+ * painted in generateLayers), so no temp canvas is needed.
+ *
+ * The strokeCallback must draw in layer-local coordinates, i.e. full-image
+ * coordinates minus the layer's offsetX/offsetY.
  */
 export function drawStrokeWithClipping(
-  layerCanvas: HTMLCanvasElement,
   layerCtx: CanvasRenderingContext2D,
-  mask: ImageData,
   strokeCallback: (ctx: CanvasRenderingContext2D) => void
 ): void {
-  // Save the current state
   layerCtx.save();
 
-  // Use source-atop: only draws where existing pixels are opaque (where the mask is)
+  // Use source-atop: only draws where existing pixels are opaque (the mask).
   layerCtx.globalCompositeOperation = "source-atop";
 
-  // Draw the stroke - it will automatically clip to the mask pixels
   strokeCallback(layerCtx);
 
-  // Restore the state
   layerCtx.restore();
 }
 
 /**
- * Create O(1) lookup table for fast layer-at-point queries
- * This is much faster than iterating through all layers on every pointer move
+ * Create an O(1) lookup table mapping every full-image pixel to its layer index.
+ * This is much faster than iterating through all layers on every pointer move.
  */
 export function createLayerLookupTable(
   layers: DrawingLayer[],
@@ -116,16 +150,14 @@ export function createLayerLookupTable(
   const data = new Uint16Array(width * height);
   data.fill(NO_LAYER_SENTINEL);
 
-  // Populate lookup table by checking each layer's mask
+  // Populate the table from each layer's bounding-box mask.
   layers.forEach((layer, layerIndex) => {
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const linearIdx = y * width + x;
-        const maskIdx = linearIdx * 4;
-
-        // If this pixel is opaque in the mask, it belongs to this layer
-        if (layer.mask.data[maskIdx + 3] === OPAQUE_ALPHA) {
-          data[linearIdx] = layerIndex;
+    const { offsetX, offsetY, width: w, height: h, mask } = layer;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        // If this pixel is opaque in the mask, it belongs to this layer.
+        if (mask.data[(y * w + x) * 4 + 3] === OPAQUE_ALPHA) {
+          data[(offsetY + y) * width + (offsetX + x)] = layerIndex;
         }
       }
     }
@@ -135,46 +167,29 @@ export function createLayerLookupTable(
 }
 
 /**
- * Find which layer (region) a point belongs to using O(1) lookup table
- * MUCH FASTER than the old O(n) approach that checked every layer
+ * Find which layer (region) a point belongs to using the O(1) lookup table.
  */
 export function findLayerAtPoint(
   layers: DrawingLayer[],
   x: number,
   y: number,
-  lookupTable?: LayerLookupTable
+  lookupTable: LayerLookupTable
 ): DrawingLayer | null {
   // Round coordinates to pixel boundaries
   x = Math.round(x);
   y = Math.round(y);
 
-  // Use lookup table if provided (O(1) lookup)
-  if (lookupTable) {
-    // Bounds check
-    if (x < 0 || x >= lookupTable.width || y < 0 || y >= lookupTable.height) {
-      return null;
-    }
-
-    const linearIdx = y * lookupTable.width + x;
-    const layerIndex = lookupTable.data[linearIdx];
-
-    // NO_LAYER_SENTINEL means no layer at this position
-    if (layerIndex === NO_LAYER_SENTINEL) {
-      return null;
-    }
-
-    return layers[layerIndex] || null;
+  // Bounds check
+  if (x < 0 || x >= lookupTable.width || y < 0 || y >= lookupTable.height) {
+    return null;
   }
 
-  // Fallback to old O(n) approach if no lookup table provided (for backwards compatibility)
-  for (const layer of layers) {
-    const idx = (y * layer.mask.width + x) * 4;
+  const layerIndex = lookupTable.data[y * lookupTable.width + x];
 
-    // Check if this pixel is opaque in the mask (meaning it's in this region)
-    if (layer.mask.data[idx + 3] === 255) {
-      return layer;
-    }
+  // NO_LAYER_SENTINEL means no layer at this position
+  if (layerIndex === NO_LAYER_SENTINEL) {
+    return null;
   }
 
-  return null;
+  return layers[layerIndex] || null;
 }
