@@ -16,7 +16,9 @@ interface ImageGalleryProps {
 
 export default function ImageGallery({ images, onSelect }: ImageGalleryProps) {
   return (
-    <div className={`flex flex-col gap-8 p-8 h-full overflow-y-auto ${APP_BACKGROUND_GRADIENT}`}>
+    <div
+      className={`flex flex-col gap-8 p-8 h-full overflow-y-auto ${APP_BACKGROUND_GRADIENT}`}
+    >
       {/* Header */}
       <div className="flex items-center justify-center gap-4">
         <h1 className="text-6xl font-bold bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">
