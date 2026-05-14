@@ -84,7 +84,7 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
   }
 
   return (
-    <div className={`flex portrait:flex-col landscape:flex-row gap-4 h-full w-full touch-none landscape:justify-between p-4 ${APP_BACKGROUND_GRADIENT}`}>
+    <div className={`flex portrait:flex-col landscape:flex-row gap-4 h-full w-full touch-none landscape:justify-center p-4 ${APP_BACKGROUND_GRADIENT}`}>
       {/* Back button and undo/redo/clear/save - separate column in landscape, in row in portrait */}
       <div className="flex-shrink-0 portrait:hidden landscape:flex flex-col gap-4">
         <Button
