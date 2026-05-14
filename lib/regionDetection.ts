@@ -28,7 +28,8 @@ export interface RegionMap {
 export function detectRegions(
   imageData: ImageData,
   boundaryThreshold = 128,
-  minRegionSize = 10
+  minRegionSize = 10,
+  dilationRadius = 2
 ): RegionMap {
   const width = imageData.width;
   const height = imageData.height;
@@ -79,12 +80,78 @@ export function detectRegions(
     }
   }
 
+  // Grow regions into the outline so colored strokes meet it (no white halo).
+  if (dilationRadius > 0) {
+    dilateRegions(pixelToRegion, width, height, dilationRadius);
+  }
+
   return {
     width,
     height,
     regionCount,
     pixelToRegion,
   };
+}
+
+/**
+ * Grow every region a few pixels into the surrounding boundary.
+ *
+ * Boundary pixels (the dark outline, including its anti-aliased fringe) belong
+ * to no region, so colored strokes would otherwise stop just short of the
+ * outline and leave a thin white halo once the outline overlay is drawn on
+ * top. A multi-source BFS lets each region claim nearby boundary pixels;
+ * pixels between two regions go to whichever region reaches them first, so
+ * regions meet under the outline without ever overlapping.
+ */
+function dilateRegions(
+  pixelToRegion: Int32Array,
+  width: number,
+  height: number,
+  radius: number
+): void {
+  // Seed the frontier with region pixels that border a boundary pixel.
+  let frontier: number[] = [];
+  for (let i = 0; i < pixelToRegion.length; i++) {
+    if (pixelToRegion[i] <= 0) continue; // boundary, not a region pixel
+    const x = i % width;
+    const y = (i / width) | 0;
+    if (
+      (x > 0 && pixelToRegion[i - 1] === -1) ||
+      (x < width - 1 && pixelToRegion[i + 1] === -1) ||
+      (y > 0 && pixelToRegion[i - width] === -1) ||
+      (y < height - 1 && pixelToRegion[i + width] === -1)
+    ) {
+      frontier.push(i);
+    }
+  }
+
+  // Expand one pixel ring per round. A boundary pixel is claimed by the first
+  // frontier pixel to reach it (the `=== -1` check), so regions never overlap.
+  for (let r = 0; r < radius && frontier.length > 0; r++) {
+    const next: number[] = [];
+    for (const i of frontier) {
+      const region = pixelToRegion[i];
+      const x = i % width;
+      const y = (i / width) | 0;
+      if (x > 0 && pixelToRegion[i - 1] === -1) {
+        pixelToRegion[i - 1] = region;
+        next.push(i - 1);
+      }
+      if (x < width - 1 && pixelToRegion[i + 1] === -1) {
+        pixelToRegion[i + 1] = region;
+        next.push(i + 1);
+      }
+      if (y > 0 && pixelToRegion[i - width] === -1) {
+        pixelToRegion[i - width] = region;
+        next.push(i - width);
+      }
+      if (y < height - 1 && pixelToRegion[i + width] === -1) {
+        pixelToRegion[i + width] = region;
+        next.push(i + width);
+      }
+    }
+    frontier = next;
+  }
 }
 
 /**

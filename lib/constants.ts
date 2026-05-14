@@ -8,6 +8,9 @@ export const CANVAS_SIZE = 1000
 // Region detection parameters
 export const BOUNDARY_THRESHOLD = 128
 export const MIN_REGION_SIZE = 100
+// Pixels each region grows into the surrounding outline, so colored strokes
+// meet the outline instead of leaving a thin white halo under its edge.
+export const REGION_DILATION_RADIUS = 2
 
 // Layer lookup table sentinel value
 export const NO_LAYER_SENTINEL = 65535
