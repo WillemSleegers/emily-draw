@@ -9,6 +9,7 @@ import { processImage, type ProcessedImageData } from "@/lib/processImage"
 
 import atomImage from "@/assets/images/atom.png"
 import balloonImage from "@/assets/images/balloon.png"
+import brontosaurusImage from "@/assets/images/brontosaurus.png"
 import candyImage from "@/assets/images/candy.png"
 import candyCaneImage from "@/assets/images/candy-cane.png"
 import circleImage from "@/assets/images/circle.png"
@@ -41,6 +42,7 @@ const IMAGES = [
   { id: 13, name: "Seaweed", src: seaweedImage },
   { id: 14, name: "Snowflake", src: snowflakeImage },
   { id: 15, name: "Sun", src: sunImage },
+  { id: 16, name: "Brontosaurus", src: brontosaurusImage },
 ]
 
 export default function Home() {
