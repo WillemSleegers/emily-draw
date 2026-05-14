@@ -65,8 +65,12 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
   // Global pointer position tracking (for edge gap fix)
   const lastGlobalPositionRef = useRef<{ x: number; y: number } | null>(null)
 
-  // Track last event time to prevent double-firing from both pointer and touch
-  const lastEventTimeRef = useRef<number>(0)
+  // Pointer and Touch events both fire for the same physical gesture (the
+  // Touch path is a fallback for quick Apple Pencil taps that Safari drops
+  // from the Pointer API). Whichever source fires first claims the gesture;
+  // events from the other source are ignored until it ends, so a stroke is
+  // never drawn twice.
+  const activeInputSourceRef = useRef<"pointer" | "touch" | null>(null)
 
   // Performance profiling (only active when DEBUG_PERFORMANCE is true)
   const frameCountRef = useRef(0)
@@ -249,9 +253,24 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
       }
     }
 
+    // A pointer released outside the canvas never reaches the element's own
+    // onPointerUp, which would leave the gesture's input source claimed
+    // forever. Clear it on any gesture end, wherever on the page it happens.
+    const handleGestureEnd = () => {
+      activeInputSourceRef.current = null
+    }
+
     window.addEventListener("pointermove", handleGlobalPointerMove, { passive: false })
+    window.addEventListener("pointerup", handleGestureEnd)
+    window.addEventListener("pointercancel", handleGestureEnd)
+    window.addEventListener("touchend", handleGestureEnd)
+    window.addEventListener("touchcancel", handleGestureEnd)
     return () => {
       window.removeEventListener("pointermove", handleGlobalPointerMove)
+      window.removeEventListener("pointerup", handleGestureEnd)
+      window.removeEventListener("pointercancel", handleGestureEnd)
+      window.removeEventListener("touchend", handleGestureEnd)
+      window.removeEventListener("touchcancel", handleGestureEnd)
     }
   }, [layers, lookupTable])
 
@@ -332,11 +351,6 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault()
-
-    // Prevent double-firing from both pointer and touch events
-    const now = Date.now()
-    if (now - lastEventTimeRef.current < 50) return
-    lastEventTimeRef.current = now
 
     const container = containerRef.current
     if (!container || layers.length === 0) return
@@ -623,42 +637,79 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     }
   }
 
-  // Add touch event handlers as fallback for Safari's pointer event filtering
-  const handleTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
-    // Convert touch to pointer-like event
-    if (event.touches.length > 0) {
-      const touch = event.touches[0]
-      const syntheticEvent = {
-        preventDefault: () => event.preventDefault(),
-        clientX: touch.clientX,
-        clientY: touch.clientY,
-        pointerType: 'pen',
-        pressure: 0.5,
-        buttons: 1,
-        isPrimary: true,
-      } as React.PointerEvent<HTMLDivElement>
+  // --- Input source arbitration --------------------------------------------
+  // The handlers above are the core drawing logic. The thin wrappers below are
+  // what the DOM actually binds to: they enforce that a single gesture is
+  // served by exactly one input source, so Pointer and Touch events firing
+  // together for the same gesture never double-draw a stroke.
 
-      handlePointerDown(syntheticEvent)
-    }
+  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (activeInputSourceRef.current === "touch") return
+    activeInputSourceRef.current = "pointer"
+    handlePointerDown(event)
+  }
+
+  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (activeInputSourceRef.current === "touch") return
+    handlePointerMove(event)
+  }
+
+  const onPointerEnd = () => {
+    if (activeInputSourceRef.current === "touch") return
+    activeInputSourceRef.current = null
+    handlePointerUp()
+  }
+
+  const onPointerLeave = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (activeInputSourceRef.current === "touch") return
+    handlePointerLeave(event)
+  }
+
+  const onPointerEnter = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (activeInputSourceRef.current === "touch") return
+    handlePointerEnter(event)
+  }
+
+  // Touch is the fallback path for Safari's pointer event filtering. It builds
+  // a synthetic pointer-like event and reuses the core handlers, but only when
+  // Touch owns the gesture (and ignores extra fingers - see palm rejection in
+  // TODO.md). Touch events keep firing even past the element bounds, so they
+  // need no leave/enter equivalents.
+  const handleTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
+    if (activeInputSourceRef.current !== null) return
+    if (event.touches.length === 0) return
+    activeInputSourceRef.current = "touch"
+
+    const touch = event.touches[0]
+    handlePointerDown({
+      preventDefault: () => event.preventDefault(),
+      clientX: touch.clientX,
+      clientY: touch.clientY,
+      pointerType: "pen",
+      pressure: 0.5,
+      buttons: 1,
+      isPrimary: true,
+    } as React.PointerEvent<HTMLDivElement>)
   }
 
   const handleTouchMove = (event: React.TouchEvent<HTMLDivElement>) => {
-    if (event.touches.length > 0) {
-      const touch = event.touches[0]
-      const syntheticEvent = {
-        preventDefault: () => event.preventDefault(),
-        clientX: touch.clientX,
-        clientY: touch.clientY,
-        pointerType: 'pen',
-        pressure: 0.5,
-        buttons: 1,
-      } as React.PointerEvent<HTMLDivElement>
+    if (activeInputSourceRef.current === "pointer") return
+    if (event.touches.length === 0) return
 
-      handlePointerMove(syntheticEvent)
-    }
+    const touch = event.touches[0]
+    handlePointerMove({
+      preventDefault: () => event.preventDefault(),
+      clientX: touch.clientX,
+      clientY: touch.clientY,
+      pointerType: "pen",
+      pressure: 0.5,
+      buttons: 1,
+    } as React.PointerEvent<HTMLDivElement>)
   }
 
   const handleTouchEnd = (event: React.TouchEvent<HTMLDivElement>) => {
+    if (activeInputSourceRef.current === "pointer") return
+    activeInputSourceRef.current = null
     event.preventDefault()
     handlePointerUp()
   }
@@ -669,12 +720,12 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
         ref={containerRef}
         className="aspect-square relative"
         style={{ touchAction: 'none' }}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-        onPointerLeave={handlePointerLeave}
-        onPointerEnter={handlePointerEnter}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerEnd}
+        onPointerCancel={onPointerEnd}
+        onPointerLeave={onPointerLeave}
+        onPointerEnter={onPointerEnter}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}

@@ -49,11 +49,13 @@ Remaining items are follow-ups.
       Fix by dilating regions a few pixels into the boundary during detection
       (a `getRegionAtWithTolerance`-style helper used to exist for this but was
       never wired in and has since been removed). (`lib/regionDetection.ts`)
-- [ ] **Fix the double-fire guard.** The 50ms wall-clock guard is only in
-      `handlePointerDown`, so a toddler's rapid taps within 50ms get dropped.
-      `handlePointerMove` has no de-dup at all, so moves are drawn twice when
-      `onTouchMove` + `onPointerMove` both fire (doubled alpha on soft brush).
-      Track `pointerId` instead of wall-clock time. (`components/Canvas.tsx`)
+- [x] **Fixed the double-fire guard.** Replaced the global 50ms wall-clock
+      guard (which dropped legitimate rapid taps and didn't cover moves at all)
+      with per-gesture input-source ownership: whichever of Pointer/Touch fires
+      first claims the gesture via `activeInputSourceRef`, and the other source
+      is ignored until it ends. Thin wrappers on the DOM bindings enforce this;
+      a window-level gesture-end listener clears the claim even when the
+      pointer is released off-canvas. (`components/Canvas.tsx`)
 - [ ] Soft brush blur is hard-clipped at region edges by the 0/255 mask alpha;
       threshold-128 against anti-aliased outlines also gives ragged edges.
 - [ ] No palm rejection — `event.touches[0]` lets a resting palm hijack drawing.
