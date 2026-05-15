@@ -90,7 +90,7 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
         <Button
           variant="outline"
           onClick={onBack}
-          className="size-20 rounded-xl border-4 border-gray-300 dark:border-gray-600 hover:border-blue-400 bg-white dark:bg-gray-800"
+          className="size-20 rounded-xl border-4 border-border hover:border-primary bg-card"
         >
           <ArrowBigLeftIcon className="size-8" />
         </Button>
@@ -98,7 +98,7 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
           variant="outline"
           onClick={handleUndo}
           disabled={!canUndo}
-          className="size-20 rounded-xl border-4 border-gray-300 dark:border-gray-600 hover:border-blue-400 bg-white dark:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="size-20 rounded-xl border-4 border-border hover:border-primary bg-card disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <Undo2Icon className="size-8" />
         </Button>
@@ -106,7 +106,7 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
           variant="outline"
           onClick={handleRedo}
           disabled={!canRedo}
-          className="size-20 rounded-xl border-4 border-gray-300 dark:border-gray-600 hover:border-blue-400 bg-white dark:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="size-20 rounded-xl border-4 border-border hover:border-primary bg-card disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <Redo2Icon className="size-8" />
         </Button>
@@ -132,7 +132,7 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
           <Button
             variant="outline"
             onClick={onBack}
-            className="flex-shrink-0 size-20 rounded-xl border-4 border-gray-300 dark:border-gray-600 hover:border-blue-400 bg-white dark:bg-gray-800"
+            className="flex-shrink-0 size-20 rounded-xl border-4 border-border hover:border-primary bg-card"
           >
             <ArrowBigLeftIcon className="size-8" />
           </Button>
@@ -140,7 +140,7 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
             variant="outline"
             onClick={handleUndo}
             disabled={!canUndo}
-            className="flex-shrink-0 size-20 rounded-xl border-4 border-gray-300 dark:border-gray-600 hover:border-blue-400 bg-white dark:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex-shrink-0 size-20 rounded-xl border-4 border-border hover:border-primary bg-card disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Undo2Icon className="size-8" />
           </Button>
@@ -148,7 +148,7 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
             variant="outline"
             onClick={handleRedo}
             disabled={!canRedo}
-            className="flex-shrink-0 size-20 rounded-xl border-4 border-gray-300 dark:border-gray-600 hover:border-blue-400 bg-white dark:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex-shrink-0 size-20 rounded-xl border-4 border-border hover:border-primary bg-card disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Redo2Icon className="size-8" />
           </Button>

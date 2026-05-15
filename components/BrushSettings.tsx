@@ -30,18 +30,18 @@ export default function BrushSettings({
   return (
     <div className="flex portrait:contents landscape:flex-col landscape:flex-wrap gap-4">
       {/* Brush Size Buttons */}
-      <div className="flex portrait:flex-row landscape:flex-col gap-3 p-2 bg-white dark:bg-gray-800 rounded-xl border-4 border-gray-300 dark:border-gray-700 portrait:h-20 landscape:w-20 items-center">
+      <div className="flex portrait:flex-row landscape:flex-col gap-3 p-2 bg-card rounded-xl border-4 border-border portrait:h-20 landscape:w-20 items-center">
         <button
           onClick={() => onSizeChange("small")}
           className={`h-14 aspect-square rounded-xl border-4 flex items-center justify-center transition-all ${
             size === "small"
-              ? "bg-blue-500 border-blue-600 scale-105"
-              : "bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 hover:border-blue-400"
+              ? "bg-primary border-primary scale-105"
+              : "bg-card border-border hover:border-primary"
           }`}
         >
           <div
             className={`rounded-full ${
-              size === "small" ? "bg-white" : "bg-gray-800 dark:bg-gray-200"
+              size === "small" ? "bg-primary-foreground" : "bg-foreground"
             }`}
             style={{ width: "12px", height: "12px" }}
           />
@@ -51,13 +51,13 @@ export default function BrushSettings({
           onClick={() => onSizeChange("medium")}
           className={`h-14 aspect-square rounded-xl border-4 flex items-center justify-center transition-all ${
             size === "medium"
-              ? "bg-blue-500 border-blue-600 scale-105"
-              : "bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 hover:border-blue-400"
+              ? "bg-primary border-primary scale-105"
+              : "bg-card border-border hover:border-primary"
           }`}
         >
           <div
             className={`rounded-full ${
-              size === "medium" ? "bg-white" : "bg-gray-800 dark:bg-gray-200"
+              size === "medium" ? "bg-primary-foreground" : "bg-foreground"
             }`}
             style={{ width: "20px", height: "20px" }}
           />
@@ -67,13 +67,13 @@ export default function BrushSettings({
           onClick={() => onSizeChange("large")}
           className={`h-14 aspect-square rounded-xl border-4 flex items-center justify-center transition-all ${
             size === "large"
-              ? "bg-blue-500 border-blue-600 scale-105"
-              : "bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 hover:border-blue-400"
+              ? "bg-primary border-primary scale-105"
+              : "bg-card border-border hover:border-primary"
           }`}
         >
           <div
             className={`rounded-full ${
-              size === "large" ? "bg-white" : "bg-gray-800 dark:bg-gray-200"
+              size === "large" ? "bg-primary-foreground" : "bg-foreground"
             }`}
             style={{ width: "32px", height: "32px" }}
           />
@@ -81,20 +81,20 @@ export default function BrushSettings({
       </div>
 
       {/* Brush Type Buttons */}
-      <div className="flex portrait:flex-row landscape:flex-col gap-3 p-2 bg-white dark:bg-gray-800 rounded-xl border-4 border-gray-300 dark:border-gray-700 portrait:h-20 landscape:w-20 items-center">
+      <div className="flex portrait:flex-row landscape:flex-col gap-3 p-2 bg-card rounded-xl border-4 border-border portrait:h-20 landscape:w-20 items-center">
         <button
           onClick={() => onBrushTypeChange("solid")}
           className={`h-14 aspect-square rounded-xl border-4 flex items-center justify-center transition-all ${
             brushType === "solid"
-              ? "bg-blue-500 border-blue-600 scale-105"
-              : "bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 hover:border-blue-400"
+              ? "bg-primary border-primary scale-105"
+              : "bg-card border-border hover:border-primary"
           }`}
         >
           <div
             className={`rounded-full ${
               brushType === "solid"
-                ? "bg-white"
-                : "bg-gray-800 dark:bg-gray-200"
+                ? "bg-primary-foreground"
+                : "bg-foreground"
             }`}
             style={{ width: "24px", height: "24px" }}
           />
@@ -104,13 +104,13 @@ export default function BrushSettings({
           onClick={() => onBrushTypeChange("soft")}
           className={`h-14 aspect-square rounded-xl border-4 flex items-center justify-center transition-all ${
             brushType === "soft"
-              ? "bg-blue-500 border-blue-600 scale-105"
-              : "bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 hover:border-blue-400"
+              ? "bg-primary border-primary scale-105"
+              : "bg-card border-border hover:border-primary"
           }`}
         >
           <div
             className={`rounded-full blur-sm ${
-              brushType === "soft" ? "bg-white" : "bg-gray-800 dark:bg-gray-200"
+              brushType === "soft" ? "bg-primary-foreground" : "bg-foreground"
             }`}
             style={{ width: "24px", height: "24px" }}
           />
@@ -118,18 +118,18 @@ export default function BrushSettings({
       </div>
 
       {/* Eraser Toggle */}
-      <div className="flex portrait:flex-row landscape:flex-col gap-3 p-2 bg-white dark:bg-gray-800 rounded-xl border-4 border-gray-300 dark:border-gray-700 portrait:h-20 landscape:w-20 items-center">
+      <div className="flex portrait:flex-row landscape:flex-col gap-3 p-2 bg-card rounded-xl border-4 border-border portrait:h-20 landscape:w-20 items-center">
         <button
           onClick={() => onEraserChange(!isEraser)}
           className={`h-14 aspect-square rounded-xl border-4 flex items-center justify-center transition-all ${
             isEraser
-              ? "bg-blue-500 border-blue-600 scale-105"
-              : "bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 hover:border-blue-400"
+              ? "bg-primary border-primary scale-105"
+              : "bg-card border-border hover:border-primary"
           }`}
         >
           <EraserIcon
             className={
-              isEraser ? "text-white" : "text-gray-800 dark:text-gray-200"
+              isEraser ? "text-primary-foreground" : "text-foreground"
             }
             size={24}
           />
@@ -137,20 +137,18 @@ export default function BrushSettings({
       </div>
 
       {/* Stay Within Lines Toggle */}
-      <div className="flex portrait:flex-row landscape:flex-col gap-3 p-2 bg-white dark:bg-gray-800 rounded-xl border-4 border-gray-300 dark:border-gray-700 portrait:h-20 landscape:w-20 items-center">
+      <div className="flex portrait:flex-row landscape:flex-col gap-3 p-2 bg-card rounded-xl border-4 border-border portrait:h-20 landscape:w-20 items-center">
         <button
           onClick={() => onStayWithinLinesChange(true)}
           className={`h-14 aspect-square rounded-xl border-4 flex items-center justify-center transition-all ${
             stayWithinLines
-              ? "bg-blue-500 border-blue-600 scale-105"
-              : "bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 hover:border-blue-400"
+              ? "bg-primary border-primary scale-105"
+              : "bg-card border-border hover:border-primary"
           }`}
         >
           <ShapesIcon
             className={
-              stayWithinLines
-                ? "text-white"
-                : "text-gray-800 dark:text-gray-200"
+              stayWithinLines ? "text-primary-foreground" : "text-foreground"
             }
             size={32}
           />
@@ -160,15 +158,13 @@ export default function BrushSettings({
           onClick={() => onStayWithinLinesChange(false)}
           className={`h-14 aspect-square rounded-xl border-4 flex items-center justify-center transition-all ${
             !stayWithinLines
-              ? "bg-blue-500 border-blue-600 scale-105"
-              : "bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 hover:border-blue-400"
+              ? "bg-primary border-primary scale-105"
+              : "bg-card border-border hover:border-primary"
           }`}
         >
           <PencilIcon
             className={
-              !stayWithinLines
-                ? "text-white"
-                : "text-gray-800 dark:text-gray-200"
+              !stayWithinLines ? "text-primary-foreground" : "text-foreground"
             }
             size={32}
           />
