@@ -12,8 +12,11 @@ underneath. It must be:
 - **1000 × 1000 pixels.** This is a hard requirement — the canvas, the region
   lookup table, and the outline overlay all assume it. A different size will
   misalign or break.
-- **PNG with a transparent background.** The app paints white behind it, so
-  transparent and white areas are both treated as colorable space.
+- **PNG background can be transparent OR white.** Either convention works.
+  The outline overlay uses `mix-blend-mode: multiply`, where white acts as
+  the identity (it doesn't paint over the artwork beneath the lines) and
+  transparent passes through unchanged. Inside the outlines, white and
+  transparent are both treated as colorable space by region detection.
 - **Dark outlines.** Region detection treats any pixel darker than
   `BOUNDARY_THRESHOLD` (128 brightness, see `lib/constants.ts`) as a line.
   Black or near-black lines work best; light grey lines won't be detected as

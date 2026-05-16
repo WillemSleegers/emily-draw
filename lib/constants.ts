@@ -7,7 +7,7 @@ export const CANVAS_SIZE = 1000
 
 // Region detection parameters
 export const BOUNDARY_THRESHOLD = 128
-export const MIN_REGION_SIZE = 100
+export const MIN_REGION_SIZE = 50
 // Pixels each region grows into the surrounding outline, so colored strokes
 // meet the outline instead of leaving a thin white halo under its edge.
 export const REGION_DILATION_RADIUS = 2
@@ -28,8 +28,8 @@ export const TRANSPARENT_ALPHA = 0
 // Brush sizes in pixels
 export const BRUSH_SIZES = {
   small: 10,
-  medium: 25,
-  large: 50,
+  medium: 50,
+  large: 100,
 } as const
 
 // Shared UI styling

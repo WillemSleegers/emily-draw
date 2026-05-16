@@ -182,9 +182,14 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
         tempCtx.drawImage(layer.canvas, layer.offsetX, layer.offsetY)
       })
 
-      // If outline image is provided, draw it on top
+      // Draw the outline on top with multiply so a white background in the
+      // source PNG doesn't paint over the artwork. Mirrors the
+      // mix-blend-multiply applied to OutlineOverlay in the live view.
       if (outlineImage) {
+        tempCtx.save()
+        tempCtx.globalCompositeOperation = "multiply"
         tempCtx.drawImage(outlineImage, 0, 0, tempCanvas.width, tempCanvas.height)
+        tempCtx.restore()
       }
 
       // Convert to data URL (PNG format)

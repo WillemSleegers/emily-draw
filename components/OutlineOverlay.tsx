@@ -29,7 +29,7 @@ export default function OutlineOverlay({
       ref={canvasRef}
       width={size}
       height={size}
-      className="absolute top-0 left-0 w-full h-full pointer-events-none"
+      className="absolute top-0 left-0 w-full h-full pointer-events-none mix-blend-multiply"
     />
   )
 }

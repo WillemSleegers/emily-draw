@@ -7,24 +7,6 @@ import LoadingScreen from "@/components/LoadingScreen"
 import ErrorBoundary from "@/components/ErrorBoundary"
 import { processImage, type ProcessedImageData } from "@/lib/processImage"
 
-import atomImage from "@/assets/images/atom.png"
-import balloonImage from "@/assets/images/balloon.png"
-import brontosaurusImage from "@/assets/images/brontosaurus.png"
-import candyImage from "@/assets/images/candy.png"
-import candyCaneImage from "@/assets/images/candy-cane.png"
-import circleImage from "@/assets/images/circle.png"
-import elephantImage from "@/assets/images/elephant.png"
-import emptyImage from "@/assets/images/empty.png"
-import icecreamImage from "@/assets/images/icecream.png"
-import pawImage from "@/assets/images/paw.png"
-import puzzleImage from "@/assets/images/puzzle.png"
-import seaweedImage from "@/assets/images/seaweed.png"
-import snowflakeImage from "@/assets/images/snowflake.png"
-import squareImage from "@/assets/images/square.png"
-import starImage from "@/assets/images/star.png"
-import sunImage from "@/assets/images/sun.png"
-import triangleImage from "@/assets/images/triangle.png"
-import cozyThanksgivingFun from "@/assets/images/cozy-thanksgiving-fun.png"
 import eightiesThrowbackImage from "@/assets/images/80s-throwback.png"
 import acornShopImage from "@/assets/images/acorn-shop.png"
 import appleHarvestImage from "@/assets/images/apple-harvest.png"
@@ -72,24 +54,6 @@ import woodlandPicnicPartyImage from "@/assets/images/woodland-picnic-party.png"
 import yarnCornerImage from "@/assets/images/yarn-corner.png"
 
 const IMAGES = [
-  { id: 0, name: "Empty", src: emptyImage },
-  { id: 1, name: "Circle", src: circleImage },
-  { id: 2, name: "Square", src: squareImage },
-  { id: 3, name: "Triangle", src: triangleImage },
-  { id: 4, name: "Star", src: starImage },
-  { id: 5, name: "Balloon", src: balloonImage },
-  { id: 6, name: "Ice Cream", src: icecreamImage },
-  { id: 7, name: "Candy", src: candyImage },
-  { id: 8, name: "Candy Cane", src: candyCaneImage },
-  { id: 9, name: "Puzzle", src: puzzleImage },
-  { id: 10, name: "Atom", src: atomImage },
-  { id: 11, name: "Elephant", src: elephantImage },
-  { id: 12, name: "Paw Print", src: pawImage },
-  { id: 13, name: "Seaweed", src: seaweedImage },
-  { id: 14, name: "Snowflake", src: snowflakeImage },
-  { id: 15, name: "Sun", src: sunImage },
-  { id: 16, name: "Brontosaurus", src: brontosaurusImage },
-  { id: 17, name: "Cozy Thanksgiving Fun", src: cozyThanksgivingFun },
   { id: 18, name: "80s Throwback", src: eightiesThrowbackImage },
   { id: 19, name: "Acorn Shop", src: acornShopImage },
   { id: 20, name: "Apple Harvest", src: appleHarvestImage },
@@ -108,7 +72,11 @@ const IMAGES = [
   { id: 33, name: "Cute Hat Making Corner", src: cuteHatMakingCornerImage },
   { id: 34, name: "Cute Noodle Corner", src: cuteNoodleCornerImage },
   { id: 35, name: "Easter Egg Fun", src: easterEggFunImage },
-  { id: 36, name: "Friends Roasting Marshmellows", src: friendsRoastingMarshmellosImage },
+  {
+    id: 36,
+    name: "Friends Roasting Marshmellows",
+    src: friendsRoastingMarshmellosImage,
+  },
   { id: 37, name: "Funfair Romance", src: funfairRomanceImage },
   { id: 38, name: "Garden Snooze", src: gardenSnoozeImage },
   { id: 39, name: "Gardening Sweethearts", src: gardeningSweetheartsImage },
@@ -116,7 +84,11 @@ const IMAGES = [
   { id: 41, name: "Honey Harvest", src: honeyHarvestImage },
   { id: 42, name: "Hook Line and Snuggle", src: hookLineAndSnuggleImage },
   { id: 43, name: "Living Room Scene", src: livingRoomSceneImage },
-  { id: 44, name: "Meadow Stroll Sweethearts", src: meadowStrollSweetheartsImage },
+  {
+    id: 44,
+    name: "Meadow Stroll Sweethearts",
+    src: meadowStrollSweetheartsImage,
+  },
   { id: 45, name: "Natural Spring", src: naturalSpringImage },
   { id: 46, name: "Nutmeg's Autumn Hideaway", src: nutmegsAutumnHideawayImage },
   { id: 47, name: "Pumpkin Soup Stall", src: pumpkinSoupStallImage },
@@ -130,7 +102,11 @@ const IMAGES = [
   { id: 55, name: "Springtime Schoolyard", src: springtimeSchoolyardImage },
   { id: 56, name: "Study Break Sanctuary", src: studyBreakSanctuaryImage },
   { id: 57, name: "Swing into Fall", src: swingIntoFallImage },
-  { id: 58, name: "Tea Time Capybara Friends", src: teaTimeCapybaraFriendsImage },
+  {
+    id: 58,
+    name: "Tea Time Capybara Friends",
+    src: teaTimeCapybaraFriendsImage,
+  },
   { id: 59, name: "Toy Shop Corner", src: toyShopCornerImage },
   { id: 60, name: "Turtle Spa", src: turtleSpaImage },
   { id: 61, name: "Woodland Picnic Party", src: woodlandPicnicPartyImage },
