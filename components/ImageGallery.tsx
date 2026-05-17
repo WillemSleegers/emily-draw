@@ -21,10 +21,10 @@ export default function ImageGallery({ images, onSelect }: ImageGalleryProps) {
     >
       {/* Header */}
       <div className="flex items-center justify-center gap-4">
-        <h1 className="text-6xl font-bold bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">
+        <h1 className="text-6xl font-bold bg-linear-to-r from-brand-accent via-brand to-primary bg-clip-text text-transparent">
           Emily&apos;s
         </h1>
-        <PencilIcon className="size-16 text-purple-500" />
+        <PencilIcon className="size-16 text-brand" />
       </div>
 
       {/* Image Grid */}
@@ -34,7 +34,7 @@ export default function ImageGallery({ images, onSelect }: ImageGalleryProps) {
             key={image.id}
             variant={"outline"}
             onClick={() => onSelect(image)}
-            className="size-auto border-4 border-purple-300 dark:border-purple-700 hover:border-pink-400 dark:hover:border-pink-600 hover:scale-105 transition-all shadow-lg hover:shadow-xl bg-white dark:bg-gray-800"
+            className="size-auto h-auto p-2 border-4 border-brand-border hover:border-brand-accent-border hover:scale-105 transition-all shadow-lg hover:shadow-xl bg-card"
           >
             <Image src={image.src} alt={image.name} width={200} height={200} />
           </Button>

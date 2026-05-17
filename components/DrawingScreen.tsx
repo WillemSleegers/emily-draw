@@ -11,7 +11,13 @@ import BrushSettings, {
 } from "@/components/BrushSettings"
 import { ProcessedImageData } from "@/lib/processImage"
 import { generateLayers, createLayerLookupTable } from "@/lib/layerGeneration"
-import { ArrowBigLeftIcon, Undo2Icon, Redo2Icon, Trash2Icon, DownloadIcon } from "lucide-react"
+import {
+  ArrowBigLeftIcon,
+  Undo2Icon,
+  Redo2Icon,
+  Trash2Icon,
+  DownloadIcon,
+} from "lucide-react"
 import { Button } from "./ui/button"
 import { APP_BACKGROUND_GRADIENT } from "@/lib/constants"
 
@@ -84,9 +90,11 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
   }
 
   return (
-    <div className={`flex portrait:flex-col landscape:flex-row gap-4 h-full w-full touch-none landscape:justify-center p-4 ${APP_BACKGROUND_GRADIENT}`}>
+    <div
+      className={`flex portrait:flex-col landscape:flex-row gap-4 h-full w-full touch-none landscape:justify-center p-4 ${APP_BACKGROUND_GRADIENT}`}
+    >
       {/* Back button and undo/redo/clear/save - separate column in landscape, in row in portrait */}
-      <div className="flex-shrink-0 portrait:hidden landscape:flex flex-col gap-4">
+      <div className="shrink-0 portrait:hidden landscape:flex flex-col gap-4">
         <Button
           variant="outline"
           onClick={onBack}
@@ -113,26 +121,26 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
         <Button
           variant="outline"
           onClick={handleClear}
-          className="size-20 rounded-xl border-4 border-gray-300 dark:border-gray-600 hover:border-red-400 bg-white dark:bg-gray-800"
+          className="size-20 rounded-xl border-4 border-border hover:border-destructive bg-card"
         >
           <Trash2Icon className="size-8" />
         </Button>
         <Button
           variant="outline"
           onClick={handleSave}
-          className="size-20 rounded-xl border-4 border-gray-300 dark:border-gray-600 hover:border-green-400 bg-white dark:bg-gray-800"
+          className="size-20 rounded-xl border-4 border-border hover:border-success bg-card"
         >
           <DownloadIcon className="size-8" />
         </Button>
       </div>
 
       {/* Controls row for portrait (includes back button + undo/redo/clear/save + controls) */}
-      <div className="flex-shrink-0 portrait:flex landscape:hidden flex-row gap-4 w-full overflow-x-auto touch-pan-x justify-between">
+      <div className="shrink-0 portrait:flex landscape:hidden flex-row gap-4 w-full overflow-x-auto touch-pan-x justify-between">
         <div className="flex gap-4">
           <Button
             variant="outline"
             onClick={onBack}
-            className="flex-shrink-0 size-20 rounded-xl border-4 border-border hover:border-primary bg-card"
+            className="shrink-0 size-20 rounded-xl border-4 border-border hover:border-primary bg-card"
           >
             <ArrowBigLeftIcon className="size-8" />
           </Button>
@@ -140,7 +148,7 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
             variant="outline"
             onClick={handleUndo}
             disabled={!canUndo}
-            className="flex-shrink-0 size-20 rounded-xl border-4 border-border hover:border-primary bg-card disabled:opacity-40 disabled:cursor-not-allowed"
+            className="shrink-0-20 rounded-xl border-4 border-border hover:border-primary bg-card disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Undo2Icon className="size-8" />
           </Button>
@@ -148,21 +156,21 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
             variant="outline"
             onClick={handleRedo}
             disabled={!canRedo}
-            className="flex-shrink-0 size-20 rounded-xl border-4 border-border hover:border-primary bg-card disabled:opacity-40 disabled:cursor-not-allowed"
+            className="shrink-0 size-20 rounded-xl border-4 border-border hover:border-primary bg-card disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Redo2Icon className="size-8" />
           </Button>
           <Button
             variant="outline"
             onClick={handleClear}
-            className="flex-shrink-0 size-20 rounded-xl border-4 border-gray-300 dark:border-gray-600 hover:border-red-400 bg-white dark:bg-gray-800"
+            className="shrink-0 size-20 rounded-xl border-4 border-border hover:border-destructive bg-card"
           >
             <Trash2Icon className="size-8" />
           </Button>
           <Button
             variant="outline"
             onClick={handleSave}
-            className="flex-shrink-0 size-20 rounded-xl border-4 border-gray-300 dark:border-gray-600 hover:border-green-400 bg-white dark:bg-gray-800"
+            className="shrink-0 size-20 rounded-xl border-4 border-border hover:border-primary bg-card"
           >
             <DownloadIcon className="size-8" />
           </Button>
@@ -180,7 +188,7 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
       </div>
 
       {/* Brush settings column for landscape */}
-      <div className="flex-shrink-0 portrait:hidden landscape:flex flex-col flex-wrap h-full gap-4">
+      <div className="shrink-0 portrait:hidden landscape:flex flex-col flex-wrap h-full gap-4">
         <BrushSettings
           size={brushSize}
           onSizeChange={setBrushSize}
@@ -195,7 +203,7 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
 
       {/* Canvas (grows to fill available space) */}
       <div className="aspect-square flex items-center justify-center overflow-hidden">
-        <div className="relative aspect-square portrait:w-full portrait:max-h-full landscape:h-full landscape:max-w-full border-4 border-gray-300 dark:border-gray-700 rounded-2xl overflow-hidden">
+        <div className="relative aspect-square portrait:w-full portrait:max-h-full landscape:h-full landscape:max-w-full border-4 border-border rounded-2xl overflow-hidden">
           <Canvas
             ref={canvasRef}
             layers={layers}
@@ -214,7 +222,7 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
       </div>
 
       {/* Color picker - Right column in landscape, bottom row in portrait */}
-      <div className="flex-shrink-0 landscape:h-full">
+      <div className="shrink-0 landscape:h-full">
         <ColorPicker selectedColor={fillColor} onColorChange={setFillColor} />
       </div>
     </div>

@@ -7,7 +7,7 @@ export const CANVAS_SIZE = 1000
 
 // Region detection parameters
 export const BOUNDARY_THRESHOLD = 128
-export const MIN_REGION_SIZE = 50
+export const MIN_REGION_SIZE = 10
 // Pixels each region grows into the surrounding outline, so colored strokes
 // meet the outline instead of leaving a thin white halo under its edge.
 export const REGION_DILATION_RADIUS = 2
@@ -34,4 +34,4 @@ export const BRUSH_SIZES = {
 
 // Shared UI styling
 export const APP_BACKGROUND_GRADIENT =
-  "bg-gradient-to-br from-pink-100 via-purple-100 to-blue-100 dark:from-pink-950 dark:via-purple-950 dark:to-blue-950"
+  "bg-gradient-to-br from-brand-accent-subtle via-brand-subtle to-primary-subtle"

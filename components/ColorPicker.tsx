@@ -71,7 +71,7 @@ export default function ColorPicker({
   onColorChange,
 }: ColorPickerProps) {
   return (
-    <div className="landscape:h-full py-4 px-4 bg-card rounded-2xl border-4 border-border portrait:overflow-x-auto portrait:overflow-y-hidden landscape:overflow-y-auto landscape:overflow-x-hidden [scrollbar-gutter:stable]">
+    <div className="landscape:h-full py-4 px-4 bg-card rounded-2xl border-4 border-border portrait:overflow-x-auto portrait:overflow-y-hidden landscape:overflow-y-auto landscape:overflow-x-hidden scrollbar-gutter-stable">
       <div className="flex portrait:flex-row landscape:flex-col gap-4 items-center">
         {COLORS.map((color) => {
           const isSelected = selectedColor === color.value
@@ -80,7 +80,7 @@ export default function ColorPicker({
               key={`${color.name}-${color.value}`}
               onClick={() => onColorChange(color.value)}
               className={`
-                relative rounded-full transition-all duration-200 flex-shrink-0
+                relative rounded-full transition-all duration-200 shrink-0
                 ${
                   isSelected
                     ? "w-16 h-16 ring-4 ring-offset-4  scale-110"
