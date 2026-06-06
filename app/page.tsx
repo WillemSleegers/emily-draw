@@ -61,6 +61,8 @@ import turtleSpaImage from "@/assets/images/coloring-bunny/turtle-spa.svg"
 import woodlandPicnicPartyImage from "@/assets/images/coloring-bunny/woodland-picnic-party.svg"
 import yarnCornerImage from "@/assets/images/coloring-bunny/yarn-corner.svg"
 
+import bulbasaurImage from "@/assets/images/pokemon/bulbasaur.png"
+
 const IMAGE_GROUPS = [
   {
     name: "Basic Shapes",
@@ -122,6 +124,12 @@ const IMAGE_GROUPS = [
       { id: 60, name: "Turtle Spa", src: turtleSpaImage },
       { id: 61, name: "Woodland Picnic Party", src: woodlandPicnicPartyImage },
       { id: 62, name: "Yarn Corner", src: yarnCornerImage },
+    ],
+  },
+  {
+    name: "Pokémon",
+    images: [
+      { id: 63, name: "Bulbasaur", src: bulbasaurImage },
     ],
   },
 ]

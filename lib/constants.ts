@@ -2,9 +2,6 @@
  * Application-wide constants
  */
 
-// Canvas and image dimensions
-export const CANVAS_SIZE = 1000
-
 // Region detection parameters
 export const BOUNDARY_THRESHOLD = 128
 export const MIN_REGION_SIZE = 10
@@ -23,7 +20,6 @@ export const MAX_HISTORY = 30
 
 // Alpha channel values
 export const OPAQUE_ALPHA = 255
-export const TRANSPARENT_ALPHA = 0
 
 // Brush sizes in pixels
 export const BRUSH_SIZES = {

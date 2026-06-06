@@ -109,49 +109,61 @@ function dilateRegions(
   height: number,
   radius: number
 ): void {
-  // Seed the frontier with region pixels that border a boundary pixel.
-  let frontier: number[] = [];
+  let frontier = buildDilationFrontier(pixelToRegion, width, height);
+  for (let r = 0; r < radius && frontier.length > 0; r++) {
+    frontier = expandDilationFrontier(pixelToRegion, frontier, width, height);
+  }
+}
+
+function buildDilationFrontier(
+  pixelToRegion: Int32Array,
+  width: number,
+  height: number
+): number[] {
+  const frontier: number[] = [];
   for (let i = 0; i < pixelToRegion.length; i++) {
-    if (pixelToRegion[i] <= 0) continue; // boundary, not a region pixel
-    const x = i % width;
-    const y = (i / width) | 0;
-    if (
-      (x > 0 && pixelToRegion[i - 1] === -1) ||
-      (x < width - 1 && pixelToRegion[i + 1] === -1) ||
-      (y > 0 && pixelToRegion[i - width] === -1) ||
-      (y < height - 1 && pixelToRegion[i + width] === -1)
-    ) {
+    if (pixelToRegion[i] > 0 && bordersAnyBoundary(pixelToRegion, i, width, height)) {
       frontier.push(i);
     }
   }
+  return frontier;
+}
 
-  // Expand one pixel ring per round. A boundary pixel is claimed by the first
-  // frontier pixel to reach it (the `=== -1` check), so regions never overlap.
-  for (let r = 0; r < radius && frontier.length > 0; r++) {
-    const next: number[] = [];
-    for (const i of frontier) {
-      const region = pixelToRegion[i];
-      const x = i % width;
-      const y = (i / width) | 0;
-      if (x > 0 && pixelToRegion[i - 1] === -1) {
-        pixelToRegion[i - 1] = region;
-        next.push(i - 1);
-      }
-      if (x < width - 1 && pixelToRegion[i + 1] === -1) {
-        pixelToRegion[i + 1] = region;
-        next.push(i + 1);
-      }
-      if (y > 0 && pixelToRegion[i - width] === -1) {
-        pixelToRegion[i - width] = region;
-        next.push(i - width);
-      }
-      if (y < height - 1 && pixelToRegion[i + width] === -1) {
-        pixelToRegion[i + width] = region;
-        next.push(i + width);
-      }
-    }
-    frontier = next;
+function bordersAnyBoundary(
+  pixelToRegion: Int32Array,
+  i: number,
+  width: number,
+  height: number
+): boolean {
+  const x = i % width;
+  const y = (i / width) | 0;
+  return (
+    (x > 0 && pixelToRegion[i - 1] === -1) ||
+    (x < width - 1 && pixelToRegion[i + 1] === -1) ||
+    (y > 0 && pixelToRegion[i - width] === -1) ||
+    (y < height - 1 && pixelToRegion[i + width] === -1)
+  );
+}
+
+// Expand one pixel ring per round. A boundary pixel is claimed by the first
+// frontier pixel to reach it (the `=== -1` check), so regions never overlap.
+function expandDilationFrontier(
+  pixelToRegion: Int32Array,
+  frontier: number[],
+  width: number,
+  height: number
+): number[] {
+  const next: number[] = [];
+  for (const i of frontier) {
+    const region = pixelToRegion[i];
+    const x = i % width;
+    const y = (i / width) | 0;
+    if (x > 0 && pixelToRegion[i - 1] === -1) { pixelToRegion[i - 1] = region; next.push(i - 1); }
+    if (x < width - 1 && pixelToRegion[i + 1] === -1) { pixelToRegion[i + 1] = region; next.push(i + 1); }
+    if (y > 0 && pixelToRegion[i - width] === -1) { pixelToRegion[i - width] = region; next.push(i - width); }
+    if (y < height - 1 && pixelToRegion[i + width] === -1) { pixelToRegion[i + width] = region; next.push(i + width); }
   }
+  return next;
 }
 
 /**

@@ -39,8 +39,43 @@ export interface LayerLookupTable {
  */
 export function generateLayers(regionMap: RegionMap): DrawingLayer[] {
   const { width, height, regionCount, pixelToRegion } = regionMap;
+  const { minX, minY, maxX, maxY } = computeRegionBounds(pixelToRegion, width, height, regionCount);
 
-  // Pass 1: compute the bounding box of every region in a single scan.
+  const layers: DrawingLayer[] = [];
+  for (let regionId = 1; regionId <= regionCount; regionId++) {
+    if (maxX[regionId] < 0) continue; // region had no pixels (defensive)
+
+    const offsetX = minX[regionId];
+    const offsetY = minY[regionId];
+    const w = maxX[regionId] - offsetX + 1;
+    const h = maxY[regionId] - offsetY + 1;
+
+    const mask = buildRegionMask(pixelToRegion, regionId, offsetX, offsetY, w, h, width);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    // willReadFrequently: undo/redo reads this canvas back via getImageData.
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+    if (!ctx) throw new Error(`Failed to get 2D context for layer ${regionId}`);
+
+    // Paint the white mask pixels once so source-atop clipping works without a
+    // temp canvas (see drawStrokeWithClipping).
+    ctx.putImageData(mask, 0, 0);
+
+    layers.push({ id: regionId, canvas, ctx, mask, offsetX, offsetY, width: w, height: h });
+  }
+
+  return layers;
+}
+
+function computeRegionBounds(
+  pixelToRegion: Int32Array,
+  width: number,
+  height: number,
+  regionCount: number
+) {
   const minX = new Int32Array(regionCount + 1).fill(width);
   const minY = new Int32Array(regionCount + 1).fill(height);
   const maxX = new Int32Array(regionCount + 1).fill(-1);
@@ -58,60 +93,34 @@ export function generateLayers(regionMap: RegionMap): DrawingLayer[] {
     }
   }
 
-  // Pass 2: build a cropped canvas + mask for each region.
-  const layers: DrawingLayer[] = [];
-  for (let regionId = 1; regionId <= regionCount; regionId++) {
-    if (maxX[regionId] < 0) continue; // region had no pixels (defensive)
+  return { minX, minY, maxX, maxY };
+}
 
-    const offsetX = minX[regionId];
-    const offsetY = minY[regionId];
-    const w = maxX[regionId] - offsetX + 1;
-    const h = maxY[regionId] - offsetY + 1;
-
-    // Mask: opaque where the pixel belongs to this region, transparent
-    // elsewhere. ImageData is zero-initialised, so only opaque pixels need
-    // writing.
-    const mask = new ImageData(w, h);
-    for (let y = 0; y < h; y++) {
-      const rowBase = (offsetY + y) * width;
-      for (let x = 0; x < w; x++) {
-        if (pixelToRegion[rowBase + offsetX + x] === regionId) {
-          const idx = (y * w + x) * 4;
-          mask.data[idx] = OPAQUE_ALPHA;
-          mask.data[idx + 1] = OPAQUE_ALPHA;
-          mask.data[idx + 2] = OPAQUE_ALPHA;
-          mask.data[idx + 3] = OPAQUE_ALPHA;
-        }
+// Mask: opaque where the pixel belongs to this region, transparent elsewhere.
+// ImageData is zero-initialised, so only opaque pixels need writing.
+function buildRegionMask(
+  pixelToRegion: Int32Array,
+  regionId: number,
+  offsetX: number,
+  offsetY: number,
+  w: number,
+  h: number,
+  imageWidth: number
+): ImageData {
+  const mask = new ImageData(w, h);
+  for (let y = 0; y < h; y++) {
+    const rowBase = (offsetY + y) * imageWidth;
+    for (let x = 0; x < w; x++) {
+      if (pixelToRegion[rowBase + offsetX + x] === regionId) {
+        const idx = (y * w + x) * 4;
+        mask.data[idx] = OPAQUE_ALPHA;
+        mask.data[idx + 1] = OPAQUE_ALPHA;
+        mask.data[idx + 2] = OPAQUE_ALPHA;
+        mask.data[idx + 3] = OPAQUE_ALPHA;
       }
     }
-
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    // willReadFrequently: undo/redo reads this canvas back via getImageData.
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-
-    if (!ctx) {
-      throw new Error(`Failed to get 2D context for layer ${regionId}`);
-    }
-
-    // Paint the white mask pixels once so source-atop clipping works without a
-    // temp canvas (see drawStrokeWithClipping).
-    ctx.putImageData(mask, 0, 0);
-
-    layers.push({
-      id: regionId,
-      canvas,
-      ctx,
-      mask,
-      offsetX,
-      offsetY,
-      width: w,
-      height: h,
-    });
   }
-
-  return layers;
+  return mask;
 }
 
 /**

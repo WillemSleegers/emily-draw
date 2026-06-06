@@ -46,27 +46,3 @@ export async function loadImageData(imagePath: string): Promise<ImageData> {
     img.src = imagePath;
   });
 }
-
-/**
- * Get image dimensions without loading full pixel data
- */
-export async function getImageDimensions(
-  imagePath: string
-): Promise<{ width: number; height: number }> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-
-    img.onload = () => {
-      resolve({
-        width: img.naturalWidth || img.width,
-        height: img.naturalHeight || img.height,
-      });
-    };
-
-    img.onerror = () => {
-      reject(new Error(`Failed to load image: ${imagePath}`));
-    };
-
-    img.src = imagePath;
-  });
-}
