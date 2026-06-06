@@ -6,15 +6,20 @@ import { APP_BACKGROUND_GRADIENT } from "@/lib/constants"
 interface ImageOption {
   id: number
   name: string
-  src: StaticImageData
+  src: StaticImageData | string
+}
+
+interface ImageGroup {
+  name: string
+  images: ImageOption[]
 }
 
 interface ImageGalleryProps {
-  images: ImageOption[]
+  groups: ImageGroup[]
   onSelect: (image: ImageOption) => void
 }
 
-export default function ImageGallery({ images, onSelect }: ImageGalleryProps) {
+export default function ImageGallery({ groups, onSelect }: ImageGalleryProps) {
   return (
     <div
       className={`flex flex-col gap-8 p-8 h-full overflow-y-auto ${APP_BACKGROUND_GRADIENT}`}
@@ -27,19 +32,24 @@ export default function ImageGallery({ images, onSelect }: ImageGalleryProps) {
         <PencilIcon className="size-16 text-brand" />
       </div>
 
-      {/* Image Grid */}
-      <div className="flex flex-wrap gap-8 justify-center">
-        {images.map((image) => (
-          <Button
-            key={image.id}
-            variant={"outline"}
-            onClick={() => onSelect(image)}
-            className="size-auto h-auto p-2 border-4 border-brand-border hover:border-brand-accent-border hover:scale-105 transition-all shadow-lg hover:shadow-xl bg-card"
-          >
-            <Image src={image.src} alt={image.name} width={200} height={200} />
-          </Button>
-        ))}
-      </div>
+      {/* Groups */}
+      {groups.map((group) => (
+        <div key={group.name} className="flex flex-col gap-4">
+          <h2 className="text-3xl font-bold text-foreground/70">{group.name}</h2>
+          <div className="flex flex-wrap gap-8 justify-center">
+            {group.images.map((image, index) => (
+              <Button
+                key={image.id}
+                variant={"outline"}
+                onClick={() => onSelect(image)}
+                className="size-auto h-auto p-2 border-4 border-brand-border hover:border-brand-accent-border hover:scale-105 transition-all shadow-lg hover:shadow-xl bg-card"
+              >
+                <Image src={image.src} alt={image.name} width={200} height={200} priority={index === 0} />
+              </Button>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }

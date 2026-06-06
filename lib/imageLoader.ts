@@ -21,9 +21,9 @@ export async function loadImageData(imagePath: string): Promise<ImageData> {
         return;
       }
 
-      // Set canvas size to image size
-      canvas.width = img.naturalWidth || img.width;
-      canvas.height = img.naturalHeight || img.height;
+      // Set canvas size to image size (SVGs without explicit dimensions may report 0)
+      canvas.width = img.naturalWidth || img.width || 1000;
+      canvas.height = img.naturalHeight || img.height || 1000;
 
       // Fill with white background first (for transparent PNGs)
       ctx.fillStyle = "white";

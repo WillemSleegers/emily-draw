@@ -20,8 +20,8 @@ export default function OutlineOverlay({
     const ctx = canvas.getContext("2d")
     if (!ctx) return
 
-    // Draw the outline image directly (images already have transparent backgrounds)
-    ctx.drawImage(outlineImage, 0, 0)
+    // Draw scaled to canvas size so SVGs fill correctly
+    ctx.drawImage(outlineImage, 0, 0, size, size)
   }, [outlineImage, size])
 
   return (
