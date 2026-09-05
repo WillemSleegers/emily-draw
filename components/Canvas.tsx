@@ -384,10 +384,11 @@ export default function Canvas({
     })
   }
 
-  const paintDot = (x: number, y: number) => {
+  /** `lockedLayer` is passed explicitly rather than read from the ref, so the
+   *  caller can't race a gesture end that has already cleared it. */
+  const paintDot = (x: number, y: number, lockedLayer: DrawingLayer | null) => {
     if (stayWithinLines) {
-      const layer = activeLayerRef.current
-      if (layer) drawDotOnLayer(layer, x, y)
+      if (lockedLayer) drawDotOnLayer(lockedLayer, x, y)
       return
     }
     layers.forEach((layer) => {
@@ -403,21 +404,23 @@ export default function Canvas({
     const coords = coordsFor(input)
     if (!coords) return
 
+    let targetLayer: DrawingLayer | null = null
     if (stayWithinLines) {
       // Region-locked drawing: find the layer using O(1) lookup table
-      const layer = findLayerAtPoint(layers, coords.x, coords.y, lookupTable)
-      if (!layer) return
-      activeLayerRef.current = layer
-    } else {
-      activeLayerRef.current = null
+      targetLayer = findLayerAtPoint(layers, coords.x, coords.y, lookupTable)
+      if (!targetLayer) return
     }
+    activeLayerRef.current = targetLayer
 
     setIsDrawing(true)
     lastPointRef.current = coords
 
-    // Draw the initial dot on the next frame so quick taps are always visible
-    // without blocking the event handler.
-    requestAnimationFrame(() => paintDot(coords.x, coords.y))
+    // Paint the initial dot now, not on the next frame. A quick tap - the whole
+    // reason the Touch fallback exists - ends before that frame runs, and
+    // `endStroke` has by then cleared the active layer and committed the undo
+    // entry, so a deferred dot would paint nothing (or land in the next
+    // stroke's history entry). One arc fill is not worth deferring.
+    paintDot(coords.x, coords.y, targetLayer)
   }
 
   const handleMove = (input: DrawInput) => {
@@ -589,7 +592,13 @@ export default function Canvas({
   return (
     <div
       ref={containerRef}
-      className="w-full h-full relative"
+      // Absolutely positioned, exactly like OutlineOverlay, so both resolve
+      // against the parent's padding box and are guaranteed to coincide.
+      // `h-full` here resolved against the parent's *border* box in WebKit
+      // whenever the parent's height came from `aspect-ratio` (i.e. portrait
+      // only), making this box 8px taller than the outline it must line up
+      // with - so the colour landed ~1% below the lines on iPad.
+      className="absolute inset-0"
       style={{ touchAction: "none" }}
       onPointerDown={(e) => {
         if (!pointerOwned()) return
