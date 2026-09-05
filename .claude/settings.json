@@ -1,11 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm outdated *)",
-      "Bash(npm audit *)",
-      "Bash(npx tsc *)",
-      "Bash(npx eslint *)",
-      "Bash(npx next *)",
+      "Bash(pnpm outdated *)",
+      "Bash(pnpm audit *)",
+      "Bash(pnpm exec tsc *)",
+      "Bash(pnpm exec eslint *)",
+      "Bash(pnpm lint)",
+      "Bash(pnpm build)",
       "Bash(git log *)",
       "Bash(fallow)"
     ]
