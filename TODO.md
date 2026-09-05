@@ -1,125 +1,114 @@
 # TODO
 
-## Future Improvements
+## Measured baseline (2026-09-05)
 
-### Architecture / Scaling (Critical — blocks real multi-region images on iPad)
+Desktop Chromium, dev build, taken with a scripted stroke:
 
-The pipeline previously used one full-size (1000x1000) canvas **plus** a
-retained full-size 4-channel `ImageData` mask per region. The first round of
-fixes (below, ✅) sizes layers to their bounding box and caps undo history.
-Remaining items are follow-ups.
+| Picture       | Layers | Tap → canvas ready | Stroke FPS |
+| ------------- | -----: | -----------------: | ---------: |
+| Circle        |      2 |              157ms |        121 |
+| Acorn Shop    |    130 |              145ms |        122 |
+| Reading Nook  |    326 |              164ms |        118 |
 
-- [x] **Per-region bounding-box sizing.** Layer canvas/mask are now sized to the
-      region's bounding box with an `offsetX/offsetY`, not the full 1000x1000.
-      Coordinates are translated to layer-local space before drawing.
-      (`lib/layerGeneration.ts`, `components/Canvas.tsx`)
-- [x] **Cap and shrink undo history.** `captureState()` now snapshots only the
-      layers a stroke actually touched (just the active layer in region-locked
-      mode), and the undo/redo stacks are capped at `MAX_HISTORY` (30).
-      (`components/Canvas.tsx`, `lib/constants.ts`)
-- [x] **`willReadFrequently: true`** on layer contexts — undo/redo reads them
-      back via `getImageData` every stroke. (`lib/layerGeneration.ts`)
-- [ ] **Drop the redundant per-layer `ImageData` mask.** Now bounding-box sized
-      (much smaller), but still duplicates what `lookupTable` encodes. Could
-      make the lookup table the single source of truth, or store the mask as a
-      1-bit/1-byte bitmask. Lower priority now. (`lib/layerGeneration.ts`)
-- [x] **Switch `pixelToRegion` to a flat `Int32Array`.** Was `number[][]`
-      (boxed) — now a flat typed array: cheaper to allocate, faster to scan, and
-      transferable to a Web Worker with no structured clone. The redundant
-      `visited` Set in `floodFillRegion` was also dropped. (`lib/regionDetection.ts`)
-- [ ] **Move region detection to a Web Worker.** `detectRegions` still runs
-      synchronously on the main thread (~1M pixel flood fill), janking the
-      LoadingScreen; `generateLayers` + `createLayerLookupTable` add more.
-      The worker can't run `generateLayers` (needs `document.createElement`),
-      so the split is: flood fill in the worker, layer/canvas creation stays on
-      the main thread.
-      **Recommendation: lower priority.** The `Int32Array` pass already
-      captured the cheap win. Only build this if profiling on the actual iPad
-      still shows a visible freeze — the benefit is load-time polish, not a
-      crash fix, and it adds a worker file + async plumbing.
-- [ ] **Reconsider N stacked DOM canvases.** Still N absolutely-positioned
-      canvases, but each is now bounding-box sized rather than full 1000x1000,
-      so the compositor footprint is far smaller. Could still composite onto a
-      single drawing canvas if compositor cost shows up in profiling.
+Layer memory for a 326-region picture is ~18 MB (canvas backing stores plus the
+retained masks), not the ~320 MB the pre-bounding-box design would have needed.
 
-### Drawing Correctness
+**These numbers need re-taking on the actual iPad before anything below is
+prioritised on performance grounds.** The desktop figures say the architecture
+is not obviously broken; they say nothing about Safari's compositor on an A-series
+chip.
 
-- [ ] **Fix the white halo around outlines.** Boundary pixels (brightness < 128)
-      belong to no region, so colored strokes stop short of the black lines.
-      Fix by dilating regions a few pixels into the boundary during detection
-      (a `getRegionAtWithTolerance`-style helper used to exist for this but was
-      never wired in and has since been removed). (`lib/regionDetection.ts`)
-- [x] **Fixed the double-fire guard.** Replaced the global 50ms wall-clock
-      guard (which dropped legitimate rapid taps and didn't cover moves at all)
-      with per-gesture input-source ownership: whichever of Pointer/Touch fires
-      first claims the gesture via `activeInputSourceRef`, and the other source
-      is ignored until it ends. Thin wrappers on the DOM bindings enforce this;
-      a window-level gesture-end listener clears the claim even when the
-      pointer is released off-canvas. (`components/Canvas.tsx`)
+## Open
+
+### Drawing correctness
+
 - [ ] Soft brush blur is hard-clipped at region edges by the 0/255 mask alpha;
       threshold-128 against anti-aliased outlines also gives ragged edges.
+      Fixing it properly means an anti-aliased (grayscale-alpha) mask instead of
+      a binary one.
 - [ ] No palm rejection — `event.touches[0]` lets a resting palm hijack drawing.
-- [ ] `OutlineOverlay` assumes exactly 1000x1000 (`drawImage(img, 0, 0)`) while
-      `Canvas.save()` scales the outline — inconsistent for non-1000px assets.
+      The Touch path could prefer `touchType === "stylus"` when any such touch
+      is present.
+- [ ] Region-locked strokes can't be started by dragging *into* the canvas with
+      the button already held: there is no region to lock to yet. Free-draw
+      handles this fine. Probably correct as-is, but worth a decision.
 
-### Code Cleanup (Low Risk)
+### Architecture / scaling
 
-- [x] Removed dead code: `scanlineFill`, `floodFill` (+ orphaned
-      `setPixelColor`/`colorsMatch`), `hexToRgb`/`rgbToHex`, `isInBounds`,
-      `hasMovedRef`, and its now-dead `SIGNIFICANT_MOVEMENT_THRESHOLD` jitter
-      block. `lib/floodFill.ts` was left holding only `RGB`/`Point`/
-      `getPixelColor`, so it was renamed to `lib/pixels.ts`.
-      (`getRegionAt`/`getRegionAtWithTolerance` were removed earlier in the
-      `Int32Array` pass.)
-- [x] Removed the redundant `visited` Set in `floodFillRegion` — `pixelToRegion`
-      already tracks visited state. (`lib/regionDetection.ts`)
-- [x] De-duplicated `BRUSH_SIZES` — `lib/constants.ts` is now the single source
-      of truth; `components/BrushSettings.tsx` imports it.
-- [ ] Replace the brittle synthetic-event casts in the touch handlers
-      (`{...} as React.PointerEvent`) with a proper shared input type.
+- [ ] **Drop the redundant per-layer `ImageData` mask.** Bounding-box sized now,
+      but still duplicates what `lookupTable` encodes. Halves layer memory.
+      (`lib/layerGeneration.ts`)
+- [ ] **Move region detection to a Web Worker.** Detection is ~9ms of a ~160ms
+      load on desktop, so this is load-time polish, not a fix. `generateLayers`
+      can't move (needs `document.createElement`). **Only worth it if the iPad
+      shows a visible freeze.**
+- [ ] **Reconsider N stacked DOM canvases.** 326 absolutely-positioned canvases
+      is a lot of compositor layers. Desktop holds ~120fps, so this is
+      speculative until measured on the iPad.
+- [ ] **`clear()` still snapshots every layer** (~18 MB) into one undo entry.
+      Fine for a rare action, but 30 clears would pin ~540 MB. Consider capping
+      full-image entries separately from stroke entries.
 
-### Performance Optimizations
+### Code quality
 
-#### Image Format Optimization (Optional)
+- [ ] `app/page.tsx` is 60+ hand-written imports plus a hand-maintained id list
+      (ids 8–17 are already an unused gap). A build-time generated manifest over
+      `assets/images/**` would remove a whole class of copy-paste mistakes.
+- [ ] `generateLayers` runs inside `useMemo`, so it creates DOM canvases as a
+      render side effect. Harmless in production; under React StrictMode in dev
+      it builds them twice.
+- [ ] Layer canvases are never explicitly released (`canvas.width = 0`) when
+      leaving a picture. GC handles it, but iOS Safari is slow to reclaim canvas
+      backing stores. Needs care: a naive `useEffect` cleanup breaks StrictMode.
 
-- [ ] Convert PNG images to 1-bit monochrome format to reduce file sizes by ~70%
-  - **Current:** 8-bit RGBA PNG (24-94 KB per image, ~730KB total)
-  - **Target:** 1-bit monochrome PNG (estimated 5-15 KB per image, ~200KB total)
-  - **Command:** `convert input.png -monochrome output.png` (requires ImageMagick)
-  - **Benefits:**
-    - Faster image loading on slower connections
-    - Reduced bandwidth usage
-    - No code changes required
-    - Same perfect quality for black/white line art
-  - **Note:** Only do this if file size becomes a concern. Current sizes are acceptable.
+### Polish
 
-### Code Quality Improvements (Medium Priority)
+- [ ] No PWA manifest / `apple-mobile-web-app-capable`, so "Add to Home Screen"
+      doesn't run fullscreen — the Safari chrome stays visible on the iPad.
+- [ ] `MIN_REGION_SIZE` is 10px, which yields 130–330 regions on the detailed
+      scenes. Raising it would trade tiny uncolorable nooks for far fewer layers.
 
-- [ ] Extract duplicate button rendering code in DrawingScreen.tsx
-- [ ] Add type-safe button state management
-- [ ] Consider memoizing expensive calculations
+## Done
 
-### Accessibility & Polish (Low Priority)
-
-- [ ] Add accessibility labels to icon-only buttons (aria-label)
-- [ ] Document memory cleanup patterns in Canvas.tsx
-- [ ] Consider extracting magic color values (#FFFFFF for eraser)
-
-## Completed Issues
-
-### ✅ Edge Gap Issue When Drawing Quickly (RESOLVED)
-
-**Problem:**
-When the user moves the mouse/pointer very quickly and enters/exits the canvas, there were small gaps between the canvas edge and where the drawing starts/ends.
-
-**Solution Implemented:**
-Global pointer tracking approach - track pointer position across the entire page, then use that information to draw from outside the canvas to the entry point, and from the last point to the exit point.
-
-**Implementation Details:**
-
-- Added `lastGlobalPositionRef` with window-level `pointermove` listener
-- Modified `handlePointerEnter` to draw from global position to entry point
-- Created `handlePointerLeave` to draw final stroke to exit coordinates
-- Works for both stay-within-lines and free drawing modes
-
-**Resolved in commit:** `1f8f0ba` - Fix edge gaps with global pointer tracking
+- [x] **Per-region bounding-box sizing.** Layer canvas/mask sized to the region's
+      bounding box with an `offsetX/offsetY`, not the full image.
+- [x] **`willReadFrequently: true`** on layer contexts.
+- [x] **Flat `Int32Array` `pixelToRegion`**, replacing boxed `number[][]`.
+- [x] **Lazy per-layer undo snapshots.** A stroke records only the layers it
+      actually paints into, and commits one entry when the gesture ends. Free
+      drawing on a 326-region picture previously snapshotted *every* layer per
+      stroke — ~18 MB per entry, up to ~540 MB across a full history.
+- [x] **Strokes released outside the canvas now commit their undo entry.** The
+      element's `pointerup` never fires there, so the entry was lost *and* the
+      next stroke silently reused the stale capture flag, leaving it unundoable.
+- [x] **Only the owning input source can end a gesture.** A stray `pointerup`
+      during a Touch-owned Pencil stroke no longer cuts the stroke short.
+- [x] **Input-source arbitration** replaced the 50ms wall-clock debounce, which
+      dropped legitimate rapid taps and never covered moves.
+- [x] **Coalesced pointer events.** Fast Pencil strokes follow every sample
+      rather than being reduced to 60Hz straight chords.
+- [x] **Cached container `DOMRect` per stroke** — was forcing a layout on every
+      pointer sample.
+- [x] **Region detection ~4x faster** (35.7ms → 8.9ms on a 326-region picture,
+      identical output): no per-pixel `{r,g,b,a}` objects, and a claim-on-push
+      `Int32Array` flood-fill stack instead of a `Point[]` one.
+- [x] **Image is loaded and decoded once**, not twice under two `Image` elements.
+- [x] **Canvas size derives from the image**, not a hardcoded `CANVAS_SIZE = 1000`.
+- [x] **Fixed `shrink-0-20`** — a typo'd class that left the portrait undo button
+      unsized and unprotected from flex shrink.
+- [x] **Saving works on iPad.** An `<a download>` on a data URL doesn't download
+      in iOS Safari; it opens the PNG in a new tab with no way back. Now goes
+      through the Web Share API (which offers "Save Image") with the download as
+      the fallback.
+- [x] **Picture selection race fixed** — tapping a second picture mid-load could
+      let the first one win.
+- [x] **A picture that fails to load now says so** instead of silently bouncing
+      back to the gallery.
+- [x] **Removed the dead `DEBUG_PERFORMANCE` block** from the pointer-move hot path.
+- [x] **De-duplicated the toolbar** (was written out twice, portrait and
+      landscape) and the brush buttons.
+- [x] **`aria-label` on every icon-only button.**
+- [x] **Removed dead code**: `scanlineFill`, `floodFill`, `hexToRgb`/`rgbToHex`,
+      `isInBounds`, `getPixelColor`, `isBoundaryPixel`, `lib/pixels.ts`.
+- [x] **Edge gaps on fast entry/exit** — fixed by window-level pointer tracking
+      that bridges the last off-canvas position to the entry point.

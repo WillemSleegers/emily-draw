@@ -23,14 +23,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Technical Stack
 
-This is a Next.js 15 application using the App Router, React Server Components (RSC), TypeScript, and Tailwind CSS v4. The project is configured with shadcn/ui components using the "New York" style variant.
+This is a Next.js 16 application using the App Router, TypeScript, and Tailwind CSS v4. The project is configured with shadcn/ui components using the "New York" style variant.
+
+Package manager: **pnpm** (`packageManager` is pinned in `package.json`; pnpm-only settings such as `overrides` live in `pnpm-workspace.yaml`, since pnpm 11 no longer reads the `pnpm` field of `package.json`).
+
+```bash
+pnpm install
+pnpm dev      # next dev --turbopack
+pnpm build
+pnpm lint
+```
 
 ## Architecture
 
 ### Tech Stack
 
-- **Framework**: Next.js 15.5.4 with App Router and Turbopack
-- **React**: v19.1.0 with React Server Components
+- **Framework**: Next.js 16 with App Router and Turbopack
+- **React**: v19.2
 - **TypeScript**: Strict mode enabled (target: ES2017)
 - **Styling**: Tailwind CSS v4 with PostCSS
 - **UI Components**: shadcn/ui (New York style) with lucide-react icons
@@ -43,23 +52,26 @@ This is a Next.js 15 application using the App Router, React Server Components (
   - `page.tsx` - Home page component with image selection
   - `globals.css` - Global styles with Tailwind v4 and theme configuration
 - `/components` - React components
-  - `DrawingScreen.tsx` - Main drawing interface with 3-column responsive layout
+  - `ImageGallery.tsx` - Picture chooser, grouped by set
+  - `DrawingScreen.tsx` - Main drawing interface, reflowing between portrait and landscape
   - `Canvas.tsx` - Drawing canvas with region-locked painting logic
   - `OutlineOverlay.tsx` - Overlay that displays the outline image on top of canvas
   - `ColorPicker.tsx` - Color selection component
   - `BrushSettings.tsx` - Brush size and type controls (child-friendly buttons)
+  - `LoadingScreen.tsx` / `ErrorScreen.tsx` - Wordless loading and failure states
+  - `ErrorBoundary.tsx` - Catches render errors and shows `ErrorScreen`
   - `ui/` - shadcn/ui components
 - `/lib` - Core utilities and algorithms
   - `layerGeneration.ts` - Generate drawable layers from regions with native clipping
-  - `regionDetection.ts` - Region detection using flood fill algorithm
-  - `floodFill.ts` - Stack-based flood fill implementation
-  - `canvasUtils.ts` - Canvas coordinate conversion and boundary detection
-  - `imageLoader.ts` - Image loading utilities
+  - `regionDetection.ts` - Region detection using a flat-typed-array flood fill
+  - `canvasUtils.ts` - Client-space to image-space coordinate conversion
+  - `imageLoader.ts` - Image loading and pixel extraction
   - `processImage.ts` - Image processing pipeline
+  - `saveDrawing.ts` - Export the finished artwork (Web Share on iPad, download elsewhere)
   - `constants.ts` - Application-wide constants (brush sizes, thresholds, etc.)
   - `utils.ts` - General utilities including `cn()` helper
 - `/assets` - Static assets
-  - `/images` - Coloring book outline images (1000x1000px PNG files)
+  - `/images` - Coloring book outline images, square SVG (and PNG), imported statically in `app/page.tsx`
 
 ### Path Aliases
 
@@ -129,15 +141,24 @@ The Canvas component uses a dual event system to ensure reliable input across al
 2. **Touch Events** (fallback): Catches quick Apple Pencil taps that Safari's Pointer API filters out
 
 Key implementation details:
-- Touch events are converted to synthetic pointer events
-- 50ms debouncing prevents double-firing when both event types fire
+- Both sources are normalised to a small internal `DrawInput` shape rather than
+  casting hand-built objects to `PointerEvent`
+- **Input-source arbitration**, not debouncing: whichever source fires first
+  claims the gesture via `activeInputSourceRef`, and the other is ignored until
+  it ends, so a stroke is never drawn twice
+- Only the source owning the gesture may end it, so a stray `pointerup` can't
+  cut a Touch-owned Pencil stroke short
+- Pointer moves are expanded with `getCoalescedEvents()` so fast Pencil strokes
+  follow every sample rather than 60 Hz chords
 - `requestAnimationFrame` used for non-blocking initial dot rendering
-- State capture optimized to only run once per stroke session
 
 ### Canvas Drawing Performance
 
-- **Layer-based architecture**: Each region is a separate OffscreenCanvas with native clipping
-- **O(1) region lookup**: Uint16Array lookup table for instant region detection
+- **Layer-based architecture**: Each region is its own `<canvas>`, sized to the
+  region's bounding box and clipped natively via `source-atop`
+- **O(1) region lookup**: `Uint16Array` lookup table for instant region detection
+- **Cached bounds**: The container's `DOMRect` is cached for the duration of a
+  stroke - reading it per pointer move forces a layout on every sample
 - **Non-blocking rendering**: Use `requestAnimationFrame` for drawing operations
 - **Global pointer tracking**: Window-level listeners track position only when pointer is over canvas to eliminate edge gaps
 
@@ -146,6 +167,13 @@ Key implementation details:
 - Use refs (not React state) for `activeLayer` to avoid race conditions
 - Preserve active layer when leaving/re-entering canvas to maintain region consistency
 - Clear active layer only on final pointer up, not on pointer leave
+- **Undo snapshots are taken lazily**, per layer, the first time a stroke paints
+  into it (`rememberLayerForUndo`), and committed as one entry when the gesture
+  ends. Snapshotting every layer up front would cost ~18 MB per entry on a
+  300-region picture in free-draw mode.
+- The window-level gesture-end listener is what commits the entry when the
+  pointer is released *outside* the canvas, where the element's own handlers
+  never fire.
 
 ## TypeScript Configuration
 
@@ -163,3 +191,13 @@ Uses Next.js recommended configs:
 - `next/typescript`
 
 Ignores: `node_modules/`, `.next/`, `out/`, `build/`, `next-env.d.ts`
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

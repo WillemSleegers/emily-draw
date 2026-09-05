@@ -1,18 +1,21 @@
 # How to add more coloring images
 
-Adding a picture to the gallery is two steps: drop a PNG into `assets/images/`,
-then register it in `app/page.tsx`. Everything else — region detection, the
-stay-within-the-lines layers, the gallery thumbnail — is automatic.
+Adding a picture to the gallery is two steps: drop an SVG or PNG into
+`assets/images/<group>/`, then register it in `app/page.tsx`. Everything else —
+region detection, the stay-within-the-lines layers, the gallery thumbnail — is
+automatic.
 
 ## 1. Prepare the image file
 
 The artwork is an **outline image**: black line art that the child colors
 underneath. It must be:
 
-- **1000 × 1000 pixels.** This is a hard requirement — the canvas, the region
-  lookup table, and the outline overlay all assume it. A different size will
-  misalign or break.
-- **PNG background can be transparent OR white.** Either convention works.
+- **Square, and around 1000 × 1000.** The canvas and lookup table are built
+  from the image's own dimensions, so a different size won't misalign — but the
+  layout reserves a square, and detection cost scales with pixel count. An SVG
+  needs explicit `width`/`height` attributes; without them the browser reports
+  no intrinsic size and the loader falls back to 1000 × 1000.
+- **Background can be transparent OR white.** Either convention works.
   The outline overlay uses `mix-blend-mode: multiply`, where white acts as
   the identity (it doesn't paint over the artwork beneath the lines) and
   transparent passes through unchanged. Inside the outlines, white and
@@ -27,7 +30,8 @@ underneath. It must be:
 
 ## 2. Drop it in `assets/images/`
 
-Name it in lowercase kebab-case, e.g. `assets/images/rocket.png`.
+Name it in lowercase kebab-case inside the group folder it belongs to, e.g.
+`assets/images/basic-shapes/rocket.svg`.
 
 ## 3. Register it in `app/page.tsx`
 
@@ -36,22 +40,28 @@ Two small additions:
 **a. Add an import** alongside the others (the list is kept alphabetical):
 
 ```ts
-import rocketImage from "@/assets/images/rocket.png"
+import rocketImage from "@/assets/images/basic-shapes/rocket.svg"
 ```
 
-**b. Add an entry to the `IMAGES` array.** Give it the next unused `id`, a
-display `name`, and the imported `src`:
+**b. Add an entry to the right group in `IMAGE_GROUPS`.** Give it the next
+unused `id`, a display `name`, and the imported `src`:
 
 ```ts
-const IMAGES = [
-  // ...existing entries...
-  { id: 16, name: "Brontosaurus", src: brontosaurusImage },
-  { id: 17, name: "Rocket", src: rocketImage },
+const IMAGE_GROUPS = [
+  {
+    name: "Basic Shapes",
+    images: [
+      // ...existing entries...
+      { id: 8, name: "Rocket", src: rocketImage },
+    ],
+  },
+  // ...other groups...
 ]
 ```
 
-`id` must be unique (just use the next integer). `name` is used as the image's
-alt text — it isn't shown to the child.
+`id` must be unique across every group (just use the next unused integer).
+`name` becomes the image's alt text and its accessible label — it isn't shown
+to the child.
 
 That's it. Save, and the new picture appears in the gallery.
 
@@ -65,17 +75,18 @@ When a child taps the image, `processImage` (`lib/processImage.ts`) runs:
 2. `generateLayers` builds one bounding-box-sized canvas per region.
 3. The child's strokes are clipped to whichever region they started in.
 
-Regions smaller than `MIN_REGION_SIZE` (100 px, in `lib/constants.ts`) are
+Regions smaller than `MIN_REGION_SIZE` (10 px, in `lib/constants.ts`) are
 discarded and folded into the outline — so tiny enclosed nooks won't become
-their own colorable areas.
+their own colorable areas. Raising this is the main lever if a detailed picture
+produces too many slivers.
 
 ## Tips for images that color well
 
 - **Bold, continuous outlines.** Thin or broken lines detect poorly.
-- **Not too many tiny regions.** Each region is its own canvas; a picture with
-  dozens of slivers costs more memory and detection time. Aim for a handful of
-  big, satisfying areas — it's a coloring book for a 3-year-old.
-- **Simple, recognizable subjects.** Look at the existing images
-  (`balloon`, `elephant`, `sun`) for the right level of detail.
+- **Not too many tiny regions.** Each region is its own canvas. The detailed
+  Coloring Bunny scenes produce 130–330 layers each, which the app handles, but
+  a 3-year-old gets more out of a handful of big, satisfying areas.
+- **Simple, recognizable subjects.** Look at `assets/images/basic-shapes/` for
+  the level of detail that colors best at this age.
 - **Test it.** Open the image in the app and check that each area locks
   independently and that colors reach the outline.

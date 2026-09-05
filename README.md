@@ -4,7 +4,7 @@ A digital coloring book application designed for young children (around 3 years 
 
 ## Key Features
 
-- **Layer-based drawing architecture**: Each colorable region is a separate OffscreenCanvas with native clipping
+- **Layer-based drawing architecture**: Each colorable region is its own `<canvas>`, sized to that region's bounding box, with native clipping
 - **Stay-within-lines toggle**: Switch between region-locked drawing and free drawing modes
 - **Edge gap elimination**: Global pointer tracking ensures strokes reach canvas edges with no gaps
 - **Apple Pencil optimized**: Touch event fallback ensures reliable quick taps and strokes on iPad
@@ -25,9 +25,9 @@ A digital coloring book application designed for young children (around 3 years 
 Instead of checking region boundaries on every pointer move, we pre-generate separate drawable layers:
 
 - **Region Detection**: Scan image to identify bounded regions (flood fill algorithm)
-- **Layer Generation**: Create one OffscreenCanvas per region with a clipping mask
-- **Native Clipping**: Draw freely on each layer - browser handles boundary enforcement
-- **Compositing**: Merge all layers onto display canvas
+- **Layer Generation**: Create one canvas per region, cropped to its bounding box, pre-painted with an opaque mask
+- **Native Clipping**: Draw with `source-atop`, which only paints where the mask is already opaque - the browser enforces the boundary
+- **Compositing**: The layers are the visible canvases; the browser composites them
 
 **Benefits:**
 - ✅ Eliminated ~100 lines of complex path interpolation code
@@ -55,10 +55,12 @@ Instead of checking region boundaries on every pointer move, we pre-generate sep
 
 **Solution**: Touch event fallback system
 - Add parallel touch event listeners alongside pointer events
-- Convert touch events to synthetic pointer events
-- Debounce within 50ms to prevent double-firing
+- Normalise both sources to one internal `DrawInput` shape
+- **Input-source arbitration** instead of debouncing: whichever source fires
+  first owns the gesture, and only that source can extend or end it
+- Expand pointer moves with `getCoalescedEvents()`, so a fast Pencil stroke
+  follows every sample instead of 60 Hz straight chords
 - Use `requestAnimationFrame` for non-blocking initial dot rendering
-- Optimize state capture to reduce event handler blocking
 
 **Result**: Reliable drawing with both finger touches and Apple Pencil, even during very quick taps and short strokes
 
@@ -72,34 +74,51 @@ Allows children to color precisely within lines or experiment freely.
 
 ### Canvas Architecture
 
-Three-layer visual system:
+Two visual tiers, both inside one square container:
 
-1. **Drawing Layers** (OffscreenCanvas array): One per region, composited to display canvas
-2. **Display Canvas** (visible): Shows merged result of all drawing layers
-3. **Outline Overlay** (top): Displays outline image with `pointer-events: none`
+1. **Drawing layers**: one `<canvas>` per region, absolutely positioned at its
+   bounding box as a percentage of the container, `pointer-events: none`.
+   These are the visible pixels - there is no separate display canvas.
+2. **Outline overlay** (top): the line art, drawn with `mix-blend-multiply` so
+   white in the source doesn't paint over the artwork beneath it.
 
-All layers precisely sized and absolutely positioned for pixel-perfect alignment.
+Pointer events land on the container, not on any canvas, so hit-testing is a
+single lookup rather than a walk over N stacked elements.
 
 ### Region Detection (`lib/regionDetection.ts`)
 
 - Identifies boundaries: dark pixels (brightness < 128)
-- Creates 2D map: `pixelToRegion[y][x]` (-1=boundary, 0=empty, >0=region ID)
-- Uses flood fill to find connected non-boundary areas
-- Filters noise: removes regions < 10 pixels
-- Generates clipping masks for each valid region
+- Builds a flat `Int32Array` map, `pixelToRegion[y * width + x]`
+  (-1 = boundary, 0 = unassigned, >0 = region ID)
+- Flood-fills connected non-boundary areas, claiming each pixel as it is pushed
+  so the stack is bounded and no `visited` set is needed
+- Filters noise: regions below `MIN_REGION_SIZE` are folded back into the outline
+- Dilates each region a few pixels into the outline, so strokes meet the lines
+  with no white halo
+- No per-pixel object allocation anywhere in the pass
 
 ### Drawing System
 
 **Stay-Within-Lines Mode:**
-1. Click detects which layer (region) via mask lookup
-2. Draw strokes on temporary canvas
-3. Apply region mask via `destination-in` compositing
-4. Merge masked stroke onto layer
-5. Composite all layers to display
+1. Pointer-down resolves the region via the O(1) `Uint16Array` lookup table
+2. That layer is held for the whole stroke, even across leaving and re-entering
+   the canvas, so the stroke can't jump regions
+3. Strokes draw straight onto the layer with `source-atop`, which clips them to
+   the region's mask - no temp canvas, no manual compositing
 
 **Free Drawing Mode:**
-- Direct drawing on display canvas
-- No region restrictions or clipping
+- No region lock; each segment paints onto every layer whose bounding box it
+  crosses, after a cheap bounding-box reject
+
+### Undo/Redo
+
+Snapshots are per layer and taken lazily: the first time a stroke paints into a
+layer, that layer's previous pixels are recorded. The whole stroke commits as
+one history entry when the gesture ends - including when the pointer is
+released outside the canvas, which the element's own handlers never see.
+
+Snapshotting every layer up front would cost roughly 18 MB per entry on a
+300-region picture in free-draw mode.
 
 ### File Structure
 
@@ -107,17 +126,22 @@ All layers precisely sized and absolutely positioned for pixel-perfect alignment
 lib/
   ├── layerGeneration.ts     # Generate drawable layers from regions
   ├── regionDetection.ts     # Region identification and mapping
-  ├── imageLoader.ts         # Image data extraction
+  ├── imageLoader.ts         # Image loading and pixel extraction
   ├── processImage.ts        # Image processing pipeline
-  ├── canvasUtils.ts         # Coordinate conversion, utilities
-  └── floodFill.ts          # Flood fill algorithm
+  ├── saveDrawing.ts         # Export artwork (Web Share on iPad, download elsewhere)
+  ├── canvasUtils.ts         # Coordinate conversion
+  └── constants.ts           # Thresholds, brush sizes, shared styling
 
 components/
   ├── Canvas.tsx             # Main drawing canvas with layer system
   ├── DrawingScreen.tsx      # Main drawing interface layout
+  ├── ImageGallery.tsx       # Picture chooser, grouped by set
   ├── OutlineOverlay.tsx     # Outline image overlay
   ├── ColorPicker.tsx        # Color selection component
   ├── BrushSettings.tsx      # Brush size/type/mode controls
+  ├── LoadingScreen.tsx      # Wordless loading state
+  ├── ErrorScreen.tsx        # Wordless failure state
+  ├── ErrorBoundary.tsx      # Catches render errors, shows ErrorScreen
   └── ui/                    # shadcn/ui components
 
 app/
@@ -128,18 +152,22 @@ app/
 
 ## Getting Started
 
-First, run the development server:
+This project uses **pnpm**.
 
 ```bash
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+To draw on the iPad, add its address to `allowedDevOrigins` in `next.config.ts`
+and open the dev server over the LAN.
+
 ## Tech Stack
 
-- **Next.js 15.5.4** with App Router and Turbopack
-- **React 19.1.0**
+- **Next.js 16** with App Router and Turbopack
+- **React 19.2**
 - **TypeScript** (strict mode)
 - **Tailwind CSS v4** with OKLCH color space
 - **HTML Canvas API** for drawing and pixel manipulation
