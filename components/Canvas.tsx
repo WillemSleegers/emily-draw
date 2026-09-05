@@ -1,13 +1,6 @@
 "use client"
 
-import {
-  useEffect,
-  useRef,
-  useState,
-  useMemo,
-  useImperativeHandle,
-  forwardRef,
-} from "react"
+import { useEffect, useRef, useState, useMemo, useImperativeHandle } from "react"
 import { getCanvasCoordinates } from "@/lib/canvasUtils"
 import {
   findLayerAtPoint,
@@ -16,7 +9,7 @@ import {
   type LayerLookupTable,
 } from "@/lib/layerGeneration"
 import type { BrushType } from "./BrushSettings"
-import { FPS_LOG_INTERVAL_MS, MAX_HISTORY } from "@/lib/constants"
+import { ERASER_COLOR, MAX_HISTORY } from "@/lib/constants"
 
 interface CanvasProps {
   layers: DrawingLayer[]
@@ -27,6 +20,7 @@ interface CanvasProps {
   isEraser: boolean
   stayWithinLines: boolean
   onHistoryChange?: () => void
+  ref?: React.Ref<CanvasRef>
 }
 
 export interface CanvasRef {
@@ -35,16 +29,53 @@ export interface CanvasRef {
   canUndo: () => boolean
   canRedo: () => boolean
   clear: () => void
-  save: (outlineImage?: HTMLImageElement) => string
+  /** Composite every layer (and optionally the outline) onto a fresh canvas. */
+  saveToCanvas: (outlineImage?: HTMLImageElement) => HTMLCanvasElement | null
 }
-
-// Performance debugging flag - set to true only during development
-const DEBUG_PERFORMANCE = false
 
 // A history entry: the "before" pixels of every layer the stroke touched.
 type HistoryEntry = Map<number, ImageData>
 
-const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
+/**
+ * The subset of a pointer/touch event the drawing logic needs.
+ *
+ * Pointer and Touch both feed the same handlers (Touch is a fallback for the
+ * quick Apple Pencil taps Safari drops from the Pointer API), so they are
+ * normalised to this instead of casting a hand-built object to a PointerEvent.
+ */
+interface DrawInput {
+  clientX: number
+  clientY: number
+  buttons: number
+  preventDefault: () => void
+  /** Intermediate positions the browser batched into this event, oldest first. */
+  coalesced?: readonly { clientX: number; clientY: number }[]
+}
+
+function fromPointer(event: React.PointerEvent<HTMLDivElement>): DrawInput {
+  const native = event.nativeEvent
+  // Apple Pencil samples at up to 240 Hz but delivers ~60 pointermove events;
+  // the skipped samples are only reachable through getCoalescedEvents.
+  const coalesced = native.getCoalescedEvents?.()
+  return {
+    clientX: event.clientX,
+    clientY: event.clientY,
+    buttons: event.buttons,
+    preventDefault: () => event.preventDefault(),
+    coalesced: coalesced && coalesced.length > 1 ? coalesced : undefined,
+  }
+}
+
+function fromTouch(event: React.TouchEvent<HTMLDivElement>, touch: React.Touch): DrawInput {
+  return {
+    clientX: touch.clientX,
+    clientY: touch.clientY,
+    buttons: 1,
+    preventDefault: () => event.preventDefault(),
+  }
+}
+
+export default function Canvas({
   layers,
   lookupTable,
   fillColor,
@@ -53,37 +84,37 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
   isEraser,
   stayWithinLines,
   onHistoryChange,
-}, ref) {
+  ref,
+}: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
 
   // Drawing state
   const [isDrawing, setIsDrawing] = useState(false)
   const activeLayerRef = useRef<DrawingLayer | null>(null)
   const lastPointRef = useRef<{ x: number; y: number } | null>(null)
-  const hasStateCapturedRef = useRef(false)
+
+  // Container bounds, cached for the duration of a stroke. Reading
+  // getBoundingClientRect per pointermove forces a layout on every sample,
+  // which at Pencil sample rates is a measurable cost.
+  const rectRef = useRef<DOMRect | null>(null)
 
   // Global pointer position tracking (for edge gap fix)
   const lastGlobalPositionRef = useRef<{ x: number; y: number } | null>(null)
 
-  // Pointer and Touch events both fire for the same physical gesture (the
-  // Touch path is a fallback for quick Apple Pencil taps that Safari drops
-  // from the Pointer API). Whichever source fires first claims the gesture;
-  // events from the other source are ignored until it ends, so a stroke is
-  // never drawn twice.
+  // Pointer and Touch events both fire for the same physical gesture.
+  // Whichever source fires first claims the gesture; events from the other
+  // source are ignored until it ends, so a stroke is never drawn twice.
   const activeInputSourceRef = useRef<"pointer" | "touch" | null>(null)
-
-  // Performance profiling (only active when DEBUG_PERFORMANCE is true)
-  const frameCountRef = useRef(0)
-  const lastFpsTimeRef = useRef<number | null>(null)
-  const performanceMetrics = useRef({
-    drawStrokeTime: 0,
-    totalMoveTime: 0,
-    sampleCount: 0,
-  })
 
   // Undo/redo history - capped stacks of per-layer ImageData snapshots
   const undoStackRef = useRef<HistoryEntry[]>([])
   const redoStackRef = useRef<HistoryEntry[]>([])
+
+  // The "before" pixels of the layers this stroke has touched so far. Built up
+  // lazily as the stroke reaches each layer and pushed on stroke end, so a
+  // free-draw stroke costs one snapshot per layer it actually paints into
+  // rather than a snapshot of every layer in the image.
+  const pendingUndoRef = useRef<HistoryEntry | null>(null)
 
   // O(1) layer lookup by id, for restoring history snapshots
   const layerById = useMemo(() => {
@@ -92,18 +123,12 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     return map
   }, [layers])
 
-  // Capture the current pixels of the given layers (or all layers if omitted).
-  const captureState = (layerIds?: Set<number>): HistoryEntry => {
-    const state: HistoryEntry = new Map()
-    layers.forEach((layer) => {
-      if (layerIds && !layerIds.has(layer.id)) return
-      state.set(
-        layer.id,
-        layer.ctx.getImageData(0, 0, layer.canvas.width, layer.canvas.height)
-      )
-    })
-    return state
-  }
+  const snapshotLayer = (layer: DrawingLayer): ImageData =>
+    layer.ctx.getImageData(0, 0, layer.canvas.width, layer.canvas.height)
+
+  // Capture the current pixels of every layer (used by clear()).
+  const captureAllLayers = (): HistoryEntry =>
+    new Map(layers.map((layer) => [layer.id, snapshotLayer(layer)]))
 
   // Restore a history snapshot - only the layers it contains are touched.
   const restoreState = (state: HistoryEntry) => {
@@ -115,46 +140,60 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     })
   }
 
-  // Push to the undo stack, capping its size to bound memory use.
-  const pushUndo = (entry: HistoryEntry) => {
-    undoStackRef.current.push(entry)
-    if (undoStackRef.current.length > MAX_HISTORY) {
-      undoStackRef.current.shift()
+  const pushCapped = (stack: HistoryEntry[], entry: HistoryEntry) => {
+    stack.push(entry)
+    if (stack.length > MAX_HISTORY) stack.shift()
+  }
+
+  // Record a layer's pre-stroke pixels the first time this stroke touches it.
+  const rememberLayerForUndo = (layer: DrawingLayer) => {
+    if (!pendingUndoRef.current) {
+      pendingUndoRef.current = new Map()
+      redoStackRef.current = [] // a new action invalidates the redo stack
+    }
+    if (!pendingUndoRef.current.has(layer.id)) {
+      pendingUndoRef.current.set(layer.id, snapshotLayer(layer))
     }
   }
 
-  // Expose undo/redo methods via ref
+  // Commit whatever this stroke touched as one undo entry.
+  const commitPendingUndo = (): boolean => {
+    const pending = pendingUndoRef.current
+    pendingUndoRef.current = null
+    if (!pending || pending.size === 0) return false
+    pushCapped(undoStackRef.current, pending)
+    return true
+  }
+
+  /**
+   * Move one step between the two history stacks: pop the snapshot to restore,
+   * push the current pixels of exactly the layers it will change onto the
+   * other stack, then restore. Undo and redo are the same operation with the
+   * stacks swapped.
+   */
+  const stepHistory = (from: HistoryEntry[], to: HistoryEntry[]) => {
+    const stateToRestore = from.pop()
+    if (!stateToRestore) return
+
+    const current: HistoryEntry = new Map()
+    stateToRestore.forEach((_, layerId) => {
+      const layer = layerById.get(layerId)
+      if (layer) current.set(layerId, snapshotLayer(layer))
+    })
+    pushCapped(to, current)
+
+    restoreState(stateToRestore)
+    onHistoryChange?.()
+  }
+
   useImperativeHandle(ref, () => ({
-    undo: () => {
-      if (undoStackRef.current.length === 0) return
-
-      // Pop the snapshot to restore, and save the current state of exactly the
-      // layers it will change onto the redo stack.
-      const stateToRestore = undoStackRef.current.pop()!
-      const affected = new Set(stateToRestore.keys())
-      redoStackRef.current.push(captureState(affected))
-      if (redoStackRef.current.length > MAX_HISTORY) {
-        redoStackRef.current.shift()
-      }
-
-      restoreState(stateToRestore)
-      onHistoryChange?.()
-    },
-    redo: () => {
-      if (redoStackRef.current.length === 0) return
-
-      const stateToRestore = redoStackRef.current.pop()!
-      const affected = new Set(stateToRestore.keys())
-      pushUndo(captureState(affected))
-
-      restoreState(stateToRestore)
-      onHistoryChange?.()
-    },
+    undo: () => stepHistory(undoStackRef.current, redoStackRef.current),
+    redo: () => stepHistory(redoStackRef.current, undoStackRef.current),
     canUndo: () => undoStackRef.current.length > 0,
     canRedo: () => redoStackRef.current.length > 0,
     clear: () => {
       // Clearing touches every layer, so snapshot all of them.
-      pushUndo(captureState())
+      pushCapped(undoStackRef.current, captureAllLayers())
       redoStackRef.current = []
 
       // Clear all layers and restore the white mask background.
@@ -166,16 +205,15 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
 
       onHistoryChange?.()
     },
-    save: (outlineImage?: HTMLImageElement) => {
-      if (layers.length === 0) return ""
+    saveToCanvas: (outlineImage?: HTMLImageElement) => {
+      if (layers.length === 0) return null
 
       // Composite all bounding-box layers onto a full-size canvas.
       const tempCanvas = document.createElement("canvas")
       tempCanvas.width = lookupTable.width
       tempCanvas.height = lookupTable.height
       const tempCtx = tempCanvas.getContext("2d")
-
-      if (!tempCtx) return ""
+      if (!tempCtx) return null
 
       // Each layer canvas is drawn at its bounding-box offset.
       layers.forEach((layer) => {
@@ -183,7 +221,7 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
       })
 
       // Draw the outline on top with multiply so a white background in the
-      // source PNG doesn't paint over the artwork. Mirrors the
+      // source image doesn't paint over the artwork. Mirrors the
       // mix-blend-multiply applied to OutlineOverlay in the live view.
       if (outlineImage) {
         tempCtx.save()
@@ -192,8 +230,7 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
         tempCtx.restore()
       }
 
-      // Convert to data URL (PNG format)
-      return tempCanvas.toDataURL("image/png")
+      return tempCanvas
     },
   }))
 
@@ -223,6 +260,7 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     // Reset undo/redo stacks when the layer set changes (new image)
     undoStackRef.current = []
     redoStackRef.current = []
+    pendingUndoRef.current = null
 
     // Cleanup: remove canvases when the component unmounts or layers change
     return () => {
@@ -232,57 +270,38 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     }
   }, [layers, lookupTable])
 
-  // Track global pointer position to fix edge gaps on fast entry
+  // Container bounds are cached per stroke; anything that could move or resize
+  // the canvas invalidates the cache.
+  const getRect = (): DOMRect | null => {
+    if (!rectRef.current && containerRef.current) {
+      rectRef.current = containerRef.current.getBoundingClientRect()
+    }
+    return rectRef.current
+  }
+
   useEffect(() => {
-    const handleGlobalPointerMove = (event: PointerEvent) => {
-      if (layers.length === 0 || !containerRef.current) return
-
-      // Only track position when actively drawing (button is held down)
-      // AND when the pointer is over the canvas container
-      if (event.buttons === 1) {
-        const rect = containerRef.current.getBoundingClientRect()
-        const isOverCanvas =
-          event.clientX >= rect.left &&
-          event.clientX <= rect.right &&
-          event.clientY >= rect.top &&
-          event.clientY <= rect.bottom
-
-        if (isOverCanvas) {
-          lastGlobalPositionRef.current = getCanvasCoordinates(
-            containerRef.current,
-            lookupTable.width,
-            lookupTable.height,
-            event
-          )
-        }
-      }
+    const invalidate = () => {
+      rectRef.current = null
     }
-
-    // A pointer released outside the canvas never reaches the element's own
-    // onPointerUp, which would leave the gesture's input source claimed
-    // forever. Clear it on any gesture end, wherever on the page it happens.
-    const handleGestureEnd = () => {
-      activeInputSourceRef.current = null
-    }
-
-    window.addEventListener("pointermove", handleGlobalPointerMove, { passive: false })
-    window.addEventListener("pointerup", handleGestureEnd)
-    window.addEventListener("pointercancel", handleGestureEnd)
-    window.addEventListener("touchend", handleGestureEnd)
-    window.addEventListener("touchcancel", handleGestureEnd)
+    window.addEventListener("resize", invalidate)
+    window.addEventListener("orientationchange", invalidate)
+    window.addEventListener("scroll", invalidate, true)
     return () => {
-      window.removeEventListener("pointermove", handleGlobalPointerMove)
-      window.removeEventListener("pointerup", handleGestureEnd)
-      window.removeEventListener("pointercancel", handleGestureEnd)
-      window.removeEventListener("touchend", handleGestureEnd)
-      window.removeEventListener("touchcancel", handleGestureEnd)
+      window.removeEventListener("resize", invalidate)
+      window.removeEventListener("orientationchange", invalidate)
+      window.removeEventListener("scroll", invalidate, true)
     }
-  }, [layers, lookupTable])
+  }, [])
+
+  const coordsFor = (input: { clientX: number; clientY: number }) => {
+    const rect = getRect()
+    if (!rect) return null
+    return getCanvasCoordinates(rect, lookupTable.width, lookupTable.height, input)
+  }
 
   // Apply brush settings to a context
   const applyBrushSettings = (ctx: CanvasRenderingContext2D) => {
-    // Use white for eraser, otherwise use selected color
-    const color = isEraser ? "#FFFFFF" : fillColor
+    const color = isEraser ? ERASER_COLOR : fillColor
 
     ctx.strokeStyle = color
     ctx.lineWidth = brushSize
@@ -293,26 +312,19 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     if (brushType === "soft" && !isEraser) {
       ctx.shadowBlur = brushSize * 0.5
       ctx.shadowColor = color
-    } else {
-      ctx.globalAlpha = 1.0
-      ctx.shadowBlur = 0
     }
   }
 
   // Draw a single dot on a layer, in layer-local coordinates.
   const drawDotOnLayer = (layer: DrawingLayer, x: number, y: number) => {
-    const color = isEraser ? "#FFFFFF" : fillColor
+    rememberLayerForUndo(layer)
+    const color = isEraser ? ERASER_COLOR : fillColor
     drawStrokeWithClipping(layer.ctx, (ctx) => {
       ctx.fillStyle = color
-      ctx.globalAlpha = 1.0
-
       if (brushType === "soft" && !isEraser) {
         ctx.shadowBlur = brushSize * 0.5
         ctx.shadowColor = color
-      } else {
-        ctx.shadowBlur = 0
       }
-
       ctx.beginPath()
       ctx.arc(x - layer.offsetX, y - layer.offsetY, brushSize / 2, 0, Math.PI * 2)
       ctx.fill()
@@ -327,6 +339,7 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     x1: number,
     y1: number
   ) => {
+    rememberLayerForUndo(layer)
     drawStrokeWithClipping(layer.ctx, (ctx) => {
       applyBrushSettings(ctx)
       ctx.beginPath()
@@ -354,392 +367,252 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas({
     )
   }
 
-  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    event.preventDefault()
+  /**
+   * Paint one segment. In region-locked mode it goes to the layer the stroke
+   * started on; in free mode, to every layer whose bounding box it crosses.
+   */
+  const paintSegment = (x0: number, y0: number, x1: number, y1: number) => {
+    if (stayWithinLines) {
+      const layer = activeLayerRef.current
+      if (layer) drawSegmentOnLayer(layer, x0, y0, x1, y1)
+      return
+    }
+    layers.forEach((layer) => {
+      if (segmentTouchesLayer(layer, x0, y0, x1, y1)) {
+        drawSegmentOnLayer(layer, x0, y0, x1, y1)
+      }
+    })
+  }
 
-    const container = containerRef.current
-    if (!container || layers.length === 0) return
+  const paintDot = (x: number, y: number) => {
+    if (stayWithinLines) {
+      const layer = activeLayerRef.current
+      if (layer) drawDotOnLayer(layer, x, y)
+      return
+    }
+    layers.forEach((layer) => {
+      if (segmentTouchesLayer(layer, x, y, x, y)) drawDotOnLayer(layer, x, y)
+    })
+  }
 
-    const coords = getCanvasCoordinates(
-      container,
-      lookupTable.width,
-      lookupTable.height,
-      event
-    )
+  const handleDown = (input: DrawInput) => {
+    input.preventDefault()
+    if (!containerRef.current || layers.length === 0) return
 
-    let targetLayer: DrawingLayer | null = null
+    rectRef.current = null // the canvas may have moved/resized since last stroke
+    const coords = coordsFor(input)
+    if (!coords) return
 
     if (stayWithinLines) {
       // Region-locked drawing: find the layer using O(1) lookup table
       const layer = findLayerAtPoint(layers, coords.x, coords.y, lookupTable)
       if (!layer) return
       activeLayerRef.current = layer
-      targetLayer = layer
     } else {
-      // Free drawing: no layer restrictions
       activeLayerRef.current = null
-    }
-
-    // Capture undo state BEFORE starting to draw (only once per stroke session).
-    // Region-locked strokes only ever touch one layer, so snapshot just that
-    // layer; free drawing can touch many, so snapshot all of them.
-    if (!hasStateCapturedRef.current) {
-      const beforeState =
-        stayWithinLines && targetLayer
-          ? captureState(new Set([targetLayer.id]))
-          : captureState()
-      pushUndo(beforeState)
-      redoStackRef.current = [] // Clear redo stack on new action
-      hasStateCapturedRef.current = true
     }
 
     setIsDrawing(true)
     lastPointRef.current = coords
 
-    // Draw initial dot immediately to ensure quick taps are always visible.
-    // Use requestAnimationFrame to not block the event handler.
-    const dotCoords = coords
-    const dotLayer = targetLayer
-
-    requestAnimationFrame(() => {
-      if (stayWithinLines) {
-        if (dotLayer) drawDotOnLayer(dotLayer, dotCoords.x, dotCoords.y)
-      } else {
-        // Free drawing: draw the dot on every layer it overlaps
-        layers.forEach((layer) => {
-          if (
-            segmentTouchesLayer(
-              layer,
-              dotCoords.x,
-              dotCoords.y,
-              dotCoords.x,
-              dotCoords.y
-            )
-          ) {
-            drawDotOnLayer(layer, dotCoords.x, dotCoords.y)
-          }
-        })
-      }
-    })
+    // Draw the initial dot on the next frame so quick taps are always visible
+    // without blocking the event handler.
+    requestAnimationFrame(() => paintDot(coords.x, coords.y))
   }
 
-  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    const container = containerRef.current
-    if (!container || !isDrawing || layers.length === 0) return
+  const handleMove = (input: DrawInput) => {
+    if (!containerRef.current || !isDrawing || layers.length === 0) return
+    input.preventDefault()
 
-    event.preventDefault()
-
-    const moveStart = DEBUG_PERFORMANCE ? performance.now() : 0
-
-    const coords = getCanvasCoordinates(
-      container,
-      lookupTable.width,
-      lookupTable.height,
-      event
-    )
     const lastPoint = lastPointRef.current
+    const coords = coordsFor(input)
+    if (!coords) return
 
     if (!lastPoint) {
       lastPointRef.current = coords
       return
     }
 
-    if (stayWithinLines) {
-      // Region-locked drawing with clipping (canvas updates automatically)
-      const layer = activeLayerRef.current
-      if (layer) {
-        const drawStart = DEBUG_PERFORMANCE ? performance.now() : 0
-        drawSegmentOnLayer(layer, lastPoint.x, lastPoint.y, coords.x, coords.y)
-        if (DEBUG_PERFORMANCE) {
-          performanceMetrics.current.drawStrokeTime += performance.now() - drawStart
+    // Draw through the coalesced samples too, so fast strokes are curves
+    // rather than the long straight chords a 60 Hz sampling would give.
+    let from = lastPoint
+    if (input.coalesced) {
+      for (const sample of input.coalesced) {
+        const point = coordsFor(sample)
+        if (!point) continue
+        if (point.x !== from.x || point.y !== from.y) {
+          paintSegment(from.x, from.y, point.x, point.y)
+          from = point
         }
-      }
-    } else {
-      // Free drawing: draw on every layer the segment overlaps
-      const drawStart = DEBUG_PERFORMANCE ? performance.now() : 0
-      layers.forEach((layer) => {
-        if (segmentTouchesLayer(layer, lastPoint.x, lastPoint.y, coords.x, coords.y)) {
-          drawSegmentOnLayer(layer, lastPoint.x, lastPoint.y, coords.x, coords.y)
-        }
-      })
-      if (DEBUG_PERFORMANCE) {
-        performanceMetrics.current.drawStrokeTime += performance.now() - drawStart
       }
     }
-
-    // Performance tracking (only when DEBUG_PERFORMANCE is enabled)
-    if (DEBUG_PERFORMANCE) {
-      const moveEnd = performance.now()
-      performanceMetrics.current.totalMoveTime += moveEnd - moveStart
-      performanceMetrics.current.sampleCount++
-
-      // Log FPS and metrics periodically
-      frameCountRef.current++
-      const now = Date.now()
-      if (lastFpsTimeRef.current === null) {
-        lastFpsTimeRef.current = now
-      }
-      if (now - lastFpsTimeRef.current >= FPS_LOG_INTERVAL_MS) {
-        const fps = frameCountRef.current
-        const metrics = performanceMetrics.current
-        const avgTotal =
-          metrics.sampleCount > 0
-            ? metrics.totalMoveTime / metrics.sampleCount
-            : 0
-        const avgDraw =
-          metrics.sampleCount > 0
-            ? metrics.drawStrokeTime / metrics.sampleCount
-            : 0
-
-        console.log(
-          `[PERF] FPS: ${fps} | Avg Total: ${avgTotal.toFixed(
-            2
-          )}ms | Avg Draw: ${avgDraw.toFixed(2)}ms`
-        )
-
-        // Reset counters
-        frameCountRef.current = 0
-        lastFpsTimeRef.current = now
-        performanceMetrics.current = {
-          drawStrokeTime: 0,
-          totalMoveTime: 0,
-          sampleCount: 0,
-        }
-      }
+    if (from.x !== coords.x || from.y !== coords.y) {
+      paintSegment(from.x, from.y, coords.x, coords.y)
     }
 
     lastPointRef.current = coords
   }
 
-  const handlePointerUp = () => {
-    // Notify parent of history change if we were drawing
-    if (isDrawing) {
-      onHistoryChange?.()
-    }
-
+  /**
+   * End the gesture for good: commit the stroke's undo entry and drop all
+   * per-stroke state. Idempotent, because the element handler and the
+   * window-level fallback can both fire for the same release.
+   */
+  const endStroke = () => {
+    const committed = commitPendingUndo()
     setIsDrawing(false)
     activeLayerRef.current = null
-    hasStateCapturedRef.current = false
     lastPointRef.current = null
     lastGlobalPositionRef.current = null
+    rectRef.current = null
+    if (committed) onHistoryChange?.()
   }
 
-  const handlePointerUpPreserveLayer = () => {
-    // Notify parent of history change if we were drawing
-    if (isDrawing) {
-      onHistoryChange?.()
-    }
-
+  /**
+   * The pointer left the canvas but the button is still down. Pause drawing
+   * without committing, so re-entry continues the same stroke and the same
+   * region.
+   */
+  const pauseStroke = () => {
     setIsDrawing(false)
-    // Don't clear activeLayerRef - preserve it for re-entry
     lastPointRef.current = null
     lastGlobalPositionRef.current = null
   }
 
-  const handlePointerLeave = (event: React.PointerEvent<HTMLDivElement>) => {
-    const container = containerRef.current
-    if (!container || !isDrawing || layers.length === 0) {
-      // Not drawing, just treat it as pointer up
-      handlePointerUp()
+  const handleLeave = (input: DrawInput) => {
+    if (!containerRef.current || !isDrawing || layers.length === 0) {
+      endStroke()
       return
     }
 
-    // Get exit coordinates
-    const exitCoords = getCanvasCoordinates(
-      container,
-      lookupTable.width,
-      lookupTable.height,
-      event
-    )
+    const exitCoords = coordsFor(input)
     const lastPoint = lastPointRef.current
 
-    // Draw final stroke to exit point if we have a last point
+    // Draw the final stroke out to the exit point so the line reaches the edge.
     if (
+      exitCoords &&
       lastPoint &&
       (lastPoint.x !== exitCoords.x || lastPoint.y !== exitCoords.y)
     ) {
-      if (stayWithinLines) {
-        const layer = activeLayerRef.current
-        if (layer) {
-          drawSegmentOnLayer(
-            layer,
-            lastPoint.x,
-            lastPoint.y,
-            exitCoords.x,
-            exitCoords.y
-          )
-        }
-      } else {
-        // Free drawing on every overlapping layer
-        layers.forEach((layer) => {
-          if (
-            segmentTouchesLayer(
-              layer,
-              lastPoint.x,
-              lastPoint.y,
-              exitCoords.x,
-              exitCoords.y
-            )
-          ) {
-            drawSegmentOnLayer(
-              layer,
-              lastPoint.x,
-              lastPoint.y,
-              exitCoords.x,
-              exitCoords.y
-            )
-          }
-        })
-      }
+      paintSegment(lastPoint.x, lastPoint.y, exitCoords.x, exitCoords.y)
     }
 
-    // Stop drawing but preserve the active layer for re-entry
-    handlePointerUpPreserveLayer()
+    pauseStroke()
   }
 
-  const handlePointerEnter = (event: React.PointerEvent<HTMLDivElement>) => {
-    const container = containerRef.current
-    if (!container || layers.length === 0) return
+  const handleEnter = (input: DrawInput) => {
+    if (!containerRef.current || layers.length === 0) return
 
-    // Check if pointer button is still pressed (buttons === 1 means primary down)
-    if (event.buttons !== 1) return
+    // Only resume if the button is still held down.
+    if (input.buttons !== 1) return
 
-    const coords = getCanvasCoordinates(
-      container,
-      lookupTable.width,
-      lookupTable.height,
-      event
-    )
+    // In region-locked mode the stroke must have started inside the canvas -
+    // otherwise there is no region to continue into.
+    if (stayWithinLines && !activeLayerRef.current) return
+
+    const coords = coordsFor(input)
+    if (!coords) return
     const globalPos = lastGlobalPositionRef.current
 
-    if (stayWithinLines) {
-      // Continue drawing on the same layer we started with - don't find a new
-      // one, so the original drawing region is preserved across re-entry.
-      const layer = activeLayerRef.current
-      if (
-        layer &&
-        globalPos &&
-        (globalPos.x !== coords.x || globalPos.y !== coords.y)
-      ) {
-        drawSegmentOnLayer(layer, globalPos.x, globalPos.y, coords.x, coords.y)
-      }
-    } else if (
-      globalPos &&
-      (globalPos.x !== coords.x || globalPos.y !== coords.y)
-    ) {
-      // Free drawing: draw on every overlapping layer
-      layers.forEach((layer) => {
-        if (segmentTouchesLayer(layer, globalPos.x, globalPos.y, coords.x, coords.y)) {
-          drawSegmentOnLayer(layer, globalPos.x, globalPos.y, coords.x, coords.y)
-        }
-      })
+    // Bridge the gap between where the pointer was last seen off-canvas and
+    // where it re-entered.
+    if (globalPos && (globalPos.x !== coords.x || globalPos.y !== coords.y)) {
+      paintSegment(globalPos.x, globalPos.y, coords.x, coords.y)
     }
 
-    // Resume drawing only if we have a layer to draw on
-    if (activeLayerRef.current || !stayWithinLines) {
-      setIsDrawing(true)
-      lastPointRef.current = coords
-    }
+    setIsDrawing(true)
+    lastPointRef.current = coords
   }
+
+  // Track global pointer position to fix edge gaps on fast entry, and end the
+  // gesture even when the pointer is released off-canvas (where the element's
+  // own up/end handlers never fire).
+  useEffect(() => {
+    const handleGlobalPointerMove = (event: PointerEvent) => {
+      if (layers.length === 0 || !containerRef.current) return
+      if (event.buttons !== 1) return
+
+      // Only track position while the pointer is over the canvas.
+      const rect = getRect()
+      if (!rect) return
+      if (
+        event.clientX >= rect.left &&
+        event.clientX <= rect.right &&
+        event.clientY >= rect.top &&
+        event.clientY <= rect.bottom
+      ) {
+        lastGlobalPositionRef.current = getCanvasCoordinates(
+          rect,
+          lookupTable.width,
+          lookupTable.height,
+          event
+        )
+      }
+    }
+
+    // Only the source that owns the gesture may end it - a stray pointerup
+    // during a Touch-owned Pencil stroke must not cut the stroke short.
+    const handlePointerEnd = () => {
+      if (activeInputSourceRef.current === "touch") return
+      activeInputSourceRef.current = null
+      endStroke()
+    }
+
+    const handleTouchGestureEnd = (event: TouchEvent) => {
+      if (activeInputSourceRef.current === "pointer") return
+      if (event.touches.length > 0) return // other fingers still down
+      activeInputSourceRef.current = null
+      endStroke()
+    }
+
+    window.addEventListener("pointermove", handleGlobalPointerMove, { passive: true })
+    window.addEventListener("pointerup", handlePointerEnd)
+    window.addEventListener("pointercancel", handlePointerEnd)
+    window.addEventListener("touchend", handleTouchGestureEnd)
+    window.addEventListener("touchcancel", handleTouchGestureEnd)
+    return () => {
+      window.removeEventListener("pointermove", handleGlobalPointerMove)
+      window.removeEventListener("pointerup", handlePointerEnd)
+      window.removeEventListener("pointercancel", handlePointerEnd)
+      window.removeEventListener("touchend", handleTouchGestureEnd)
+      window.removeEventListener("touchcancel", handleTouchGestureEnd)
+    }
+  })
 
   // --- Input source arbitration --------------------------------------------
-  // The handlers above are the core drawing logic. The thin wrappers below are
-  // what the DOM actually binds to: they enforce that a single gesture is
-  // served by exactly one input source, so Pointer and Touch events firing
-  // together for the same gesture never double-draw a stroke.
+  // A single gesture is served by exactly one input source, so Pointer and
+  // Touch firing together never double-draw a stroke. Touch events keep firing
+  // past the element bounds, so they need no leave/enter equivalents.
 
-  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (activeInputSourceRef.current === "touch") return
-    activeInputSourceRef.current = "pointer"
-    handlePointerDown(event)
-  }
-
-  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (activeInputSourceRef.current === "touch") return
-    handlePointerMove(event)
-  }
-
-  const onPointerEnd = () => {
-    if (activeInputSourceRef.current === "touch") return
-    activeInputSourceRef.current = null
-    handlePointerUp()
-  }
-
-  const onPointerLeave = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (activeInputSourceRef.current === "touch") return
-    handlePointerLeave(event)
-  }
-
-  const onPointerEnter = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (activeInputSourceRef.current === "touch") return
-    handlePointerEnter(event)
-  }
-
-  // Touch is the fallback path for Safari's pointer event filtering. It builds
-  // a synthetic pointer-like event and reuses the core handlers, but only when
-  // Touch owns the gesture (and ignores extra fingers - see palm rejection in
-  // TODO.md). Touch events keep firing even past the element bounds, so they
-  // need no leave/enter equivalents.
-  const handleTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
-    if (activeInputSourceRef.current !== null) return
-    if (event.touches.length === 0) return
-    activeInputSourceRef.current = "touch"
-
-    const touch = event.touches[0]
-    handlePointerDown({
-      preventDefault: () => event.preventDefault(),
-      clientX: touch.clientX,
-      clientY: touch.clientY,
-      pointerType: "pen",
-      pressure: 0.5,
-      buttons: 1,
-      isPrimary: true,
-    } as React.PointerEvent<HTMLDivElement>)
-  }
-
-  const handleTouchMove = (event: React.TouchEvent<HTMLDivElement>) => {
-    if (activeInputSourceRef.current === "pointer") return
-    if (event.touches.length === 0) return
-
-    const touch = event.touches[0]
-    handlePointerMove({
-      preventDefault: () => event.preventDefault(),
-      clientX: touch.clientX,
-      clientY: touch.clientY,
-      pointerType: "pen",
-      pressure: 0.5,
-      buttons: 1,
-    } as React.PointerEvent<HTMLDivElement>)
-  }
-
-  const handleTouchEnd = (event: React.TouchEvent<HTMLDivElement>) => {
-    if (activeInputSourceRef.current === "pointer") return
-    activeInputSourceRef.current = null
-    event.preventDefault()
-    handlePointerUp()
-  }
+  const pointerOwned = () => activeInputSourceRef.current !== "touch"
 
   return (
-    <>
-      <div
-        ref={containerRef}
-        className="aspect-square relative"
-        style={{ touchAction: 'none' }}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerEnd}
-        onPointerCancel={onPointerEnd}
-        onPointerLeave={onPointerLeave}
-        onPointerEnter={onPointerEnter}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        onTouchCancel={handleTouchEnd}
-      >
-        {/* Layer canvases are mounted here via useEffect */}
-      </div>
-    </>
+    <div
+      ref={containerRef}
+      className="w-full h-full relative"
+      style={{ touchAction: "none" }}
+      onPointerDown={(e) => {
+        if (!pointerOwned()) return
+        activeInputSourceRef.current = "pointer"
+        handleDown(fromPointer(e))
+      }}
+      onPointerMove={(e) => pointerOwned() && handleMove(fromPointer(e))}
+      onPointerLeave={(e) => pointerOwned() && handleLeave(fromPointer(e))}
+      onPointerEnter={(e) => pointerOwned() && handleEnter(fromPointer(e))}
+      onTouchStart={(e) => {
+        if (activeInputSourceRef.current !== null) return
+        const touch = e.touches[0]
+        if (!touch) return
+        activeInputSourceRef.current = "touch"
+        handleDown(fromTouch(e, touch))
+      }}
+      onTouchMove={(e) => {
+        if (activeInputSourceRef.current === "pointer") return
+        const touch = e.touches[0]
+        if (touch) handleMove(fromTouch(e, touch))
+      }}
+    >
+      {/* Layer canvases are mounted here via useEffect */}
+    </div>
   )
-})
-
-export default Canvas
+}

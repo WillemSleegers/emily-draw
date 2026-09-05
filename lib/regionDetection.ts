@@ -1,10 +1,11 @@
 /**
  * Region Detection System
- * Identifies and maps distinct bounded regions in an image
+ * Identifies and maps distinct bounded regions in an image.
+ *
+ * This is the load-time hot path: it touches every pixel of a 1000x1000 image
+ * several times, on the main thread, while the child stares at a spinner. It
+ * is written with flat typed arrays and no per-pixel object allocation.
  */
-
-import { getPixelColor, type Point } from "./pixels";
-import { isBoundaryPixel } from "./canvasUtils";
 
 export interface RegionMap {
   width: number;
@@ -21,9 +22,12 @@ export interface RegionMap {
   pixelToRegion: Int32Array;
 }
 
+const BOUNDARY = -1;
+const UNASSIGNED = 0;
+
 /**
- * Detect all regions in an image
- * A region is a connected area of non-boundary pixels
+ * Detect all regions in an image.
+ * A region is a connected area of non-boundary pixels.
  */
 export function detectRegions(
   imageData: ImageData,
@@ -31,52 +35,31 @@ export function detectRegions(
   minRegionSize = 10,
   dilationRadius = 2
 ): RegionMap {
-  const width = imageData.width;
-  const height = imageData.height;
+  const { width, height } = imageData;
+  const pixelCount = width * height;
 
-  // Flat pixel-to-region map (zero-initialised, so every pixel starts as
-  // unassigned). -1 = boundary, 0 = unassigned, >0 = region ID.
-  const pixelToRegion = new Int32Array(width * height);
+  const pixelToRegion = markBoundaries(imageData, boundaryThreshold);
 
-  // Mark boundary pixels
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const color = getPixelColor(imageData, x, y);
-      if (isBoundaryPixel(color, boundaryThreshold)) {
-        pixelToRegion[y * width + x] = -1;
-      }
-    }
-  }
+  // Scratch buffers, allocated once and reused by every flood fill. Claiming
+  // each pixel as it is pushed means a pixel is pushed at most once, so
+  // neither buffer can exceed the pixel count.
+  const stack = new Int32Array(pixelCount);
+  const claimed = new Int32Array(pixelCount);
 
-  // Find all regions using flood fill
   let regionCount = 0;
-  let currentRegionId = 1;
+  let nextRegionId = 1;
 
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      // Skip if already assigned or is a boundary
-      if (pixelToRegion[y * width + x] !== 0) continue;
+  for (let i = 0; i < pixelCount; i++) {
+    if (pixelToRegion[i] !== UNASSIGNED) continue;
 
-      // Found a new region - flood fill to find all pixels in this region
-      const regionPixels = floodFillRegion(
-        pixelToRegion,
-        width,
-        height,
-        x,
-        y,
-        currentRegionId
-      );
+    const size = floodFillRegion(pixelToRegion, width, height, i, nextRegionId, stack, claimed);
 
-      // Only keep regions above minimum size
-      if (regionPixels.length >= minRegionSize) {
-        regionCount++;
-        currentRegionId++;
-      } else {
-        // Mark small regions as boundary to ignore them
-        for (const pixel of regionPixels) {
-          pixelToRegion[pixel.y * width + pixel.x] = -1;
-        }
-      }
+    if (size >= minRegionSize) {
+      regionCount++;
+      nextRegionId++;
+    } else {
+      // Too small to color - fold it into the outline.
+      for (let n = 0; n < size; n++) pixelToRegion[claimed[n]] = BOUNDARY;
     }
   }
 
@@ -85,12 +68,79 @@ export function detectRegions(
     dilateRegions(pixelToRegion, width, height, dilationRadius);
   }
 
-  return {
-    width,
-    height,
-    regionCount,
-    pixelToRegion,
-  };
+  return { width, height, regionCount, pixelToRegion };
+}
+
+/**
+ * Mark every pixel darker than the threshold as an outline.
+ *
+ * Reads the RGBA bytes directly: a helper returning an `{r,g,b,a}` object here
+ * would allocate one short-lived object per pixel (a million per image).
+ */
+function markBoundaries(imageData: ImageData, threshold: number): Int32Array {
+  const { data, width, height } = imageData;
+  const pixelToRegion = new Int32Array(width * height);
+  // Compare the summed channels against 3x the threshold to avoid a divide.
+  const sumThreshold = threshold * 3;
+
+  for (let i = 0, p = 0; i < pixelToRegion.length; i++, p += 4) {
+    if (data[p] + data[p + 1] + data[p + 2] < sumThreshold) {
+      pixelToRegion[i] = BOUNDARY;
+    }
+  }
+
+  return pixelToRegion;
+}
+
+/**
+ * Flood fill from `startIndex`, claiming pixels into `regionId`.
+ *
+ * Pixels are claimed at push time rather than pop time, so each is pushed
+ * exactly once - which both bounds the stack at the pixel count and removes
+ * the need for a separate `visited` set. Returns the region's pixel count;
+ * the claimed indices are left in `claimed[0..count)`.
+ */
+function floodFillRegion(
+  pixelToRegion: Int32Array,
+  width: number,
+  height: number,
+  startIndex: number,
+  regionId: number,
+  stack: Int32Array,
+  claimed: Int32Array
+): number {
+  let top = 0;
+  let count = 0;
+
+  pixelToRegion[startIndex] = regionId;
+  stack[top++] = startIndex;
+
+  while (top > 0) {
+    const i = stack[--top];
+    claimed[count++] = i;
+
+    const x = i % width;
+    const y = (i / width) | 0;
+
+    if (x > 0 && pixelToRegion[i - 1] === UNASSIGNED) {
+      pixelToRegion[i - 1] = regionId;
+      stack[top++] = i - 1;
+    }
+    if (x < width - 1 && pixelToRegion[i + 1] === UNASSIGNED) {
+      pixelToRegion[i + 1] = regionId;
+      stack[top++] = i + 1;
+    }
+    if (y > 0 && pixelToRegion[i - width] === UNASSIGNED) {
+      pixelToRegion[i - width] = regionId;
+      stack[top++] = i - width;
+    }
+    if (y < height - 1 && pixelToRegion[i + width] === UNASSIGNED) {
+      pixelToRegion[i + width] = regionId;
+      stack[top++] = i + width;
+    }
+  }
+
+  return count;
 }
 
 /**
@@ -138,15 +188,15 @@ function bordersAnyBoundary(
   const x = i % width;
   const y = (i / width) | 0;
   return (
-    (x > 0 && pixelToRegion[i - 1] === -1) ||
-    (x < width - 1 && pixelToRegion[i + 1] === -1) ||
-    (y > 0 && pixelToRegion[i - width] === -1) ||
-    (y < height - 1 && pixelToRegion[i + width] === -1)
+    (x > 0 && pixelToRegion[i - 1] === BOUNDARY) ||
+    (x < width - 1 && pixelToRegion[i + 1] === BOUNDARY) ||
+    (y > 0 && pixelToRegion[i - width] === BOUNDARY) ||
+    (y < height - 1 && pixelToRegion[i + width] === BOUNDARY)
   );
 }
 
 // Expand one pixel ring per round. A boundary pixel is claimed by the first
-// frontier pixel to reach it (the `=== -1` check), so regions never overlap.
+// frontier pixel to reach it, so regions never overlap.
 function expandDilationFrontier(
   pixelToRegion: Int32Array,
   frontier: number[],
@@ -158,53 +208,10 @@ function expandDilationFrontier(
     const region = pixelToRegion[i];
     const x = i % width;
     const y = (i / width) | 0;
-    if (x > 0 && pixelToRegion[i - 1] === -1) { pixelToRegion[i - 1] = region; next.push(i - 1); }
-    if (x < width - 1 && pixelToRegion[i + 1] === -1) { pixelToRegion[i + 1] = region; next.push(i + 1); }
-    if (y > 0 && pixelToRegion[i - width] === -1) { pixelToRegion[i - width] = region; next.push(i - width); }
-    if (y < height - 1 && pixelToRegion[i + width] === -1) { pixelToRegion[i + width] = region; next.push(i + width); }
+    if (x > 0 && pixelToRegion[i - 1] === BOUNDARY) { pixelToRegion[i - 1] = region; next.push(i - 1); }
+    if (x < width - 1 && pixelToRegion[i + 1] === BOUNDARY) { pixelToRegion[i + 1] = region; next.push(i + 1); }
+    if (y > 0 && pixelToRegion[i - width] === BOUNDARY) { pixelToRegion[i - width] = region; next.push(i - width); }
+    if (y < height - 1 && pixelToRegion[i + width] === BOUNDARY) { pixelToRegion[i + width] = region; next.push(i + width); }
   }
   return next;
-}
-
-/**
- * Flood fill to identify all pixels in a region.
- *
- * No separate `visited` set is needed: `pixelToRegion` is written the moment a
- * pixel is claimed, so the `!== 0` check below already rejects boundaries and
- * pixels claimed earlier in this same fill (including repeated stack entries
- * for the same pixel).
- */
-function floodFillRegion(
-  pixelToRegion: Int32Array,
-  width: number,
-  height: number,
-  startX: number,
-  startY: number,
-  regionId: number
-): Point[] {
-  const pixels: Point[] = [];
-  const stack: Point[] = [{ x: startX, y: startY }];
-
-  while (stack.length > 0) {
-    const { x, y } = stack.pop()!;
-
-    // Skip if out of bounds
-    if (x < 0 || x >= width || y < 0 || y >= height) continue;
-
-    // Skip if this pixel is already assigned or is a boundary
-    const idx = y * width + x;
-    if (pixelToRegion[idx] !== 0) continue;
-
-    // Add to region
-    pixels.push({ x, y });
-    pixelToRegion[idx] = regionId;
-
-    // Add neighbors
-    stack.push({ x: x + 1, y });
-    stack.push({ x: x - 1, y });
-    stack.push({ x, y: y + 1 });
-    stack.push({ x, y: y - 1 });
-  }
-
-  return pixels;
 }

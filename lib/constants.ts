@@ -12,14 +12,14 @@ export const REGION_DILATION_RADIUS = 2
 // Layer lookup table sentinel value
 export const NO_LAYER_SENTINEL = 65535
 
-// Performance monitoring
-export const FPS_LOG_INTERVAL_MS = 1000
-
 // Maximum number of undo/redo snapshots retained (caps history memory)
 export const MAX_HISTORY = 30
 
 // Alpha channel values
 export const OPAQUE_ALPHA = 255
+
+// The eraser paints the layer's white mask colour back over the artwork.
+export const ERASER_COLOR = "#FFFFFF"
 
 // Brush sizes in pixels
 export const BRUSH_SIZES = {

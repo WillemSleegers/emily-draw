@@ -3,46 +3,34 @@
  * Load images and extract pixel data without canvas rendering
  */
 
-/**
- * Load an image and extract its ImageData
- * This creates a temporary canvas to get pixel data but doesn't rely on rendering timing
- */
-export async function loadImageData(imagePath: string): Promise<ImageData> {
+/** Load an image element, resolving once it has decoded. */
+export function loadImage(imagePath: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
-    const img = new Image();
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = () => reject(new Error(`Failed to load image: ${imagePath}`))
+    img.src = imagePath
+  })
+}
 
-    img.onload = () => {
-      // Create an offscreen canvas for pixel extraction
-      const canvas = document.createElement("canvas");
-      const ctx = canvas.getContext("2d");
+/**
+ * Extract the pixel data of an already-loaded image.
+ *
+ * Uses a temporary canvas rather than relying on rendering timing.
+ */
+export function extractImageData(img: HTMLImageElement): ImageData {
+  const canvas = document.createElement("canvas")
+  // SVGs without explicit dimensions may report 0.
+  canvas.width = img.naturalWidth || img.width || 1000
+  canvas.height = img.naturalHeight || img.height || 1000
 
-      if (!ctx) {
-        reject(new Error("Could not get canvas context"));
-        return;
-      }
+  const ctx = canvas.getContext("2d", { willReadFrequently: true })
+  if (!ctx) throw new Error("Could not get canvas context")
 
-      // Set canvas size to image size (SVGs without explicit dimensions may report 0)
-      canvas.width = img.naturalWidth || img.width || 1000;
-      canvas.height = img.naturalHeight || img.height || 1000;
+  // Fill with white first, so transparent artwork reads as colorable space.
+  ctx.fillStyle = "white"
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
 
-      // Fill with white background first (for transparent PNGs)
-      ctx.fillStyle = "white";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // Draw image on top of white background
-      ctx.drawImage(img, 0, 0);
-
-      // Extract pixel data
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
-      resolve(imageData);
-    };
-
-    img.onerror = () => {
-      reject(new Error(`Failed to load image: ${imagePath}`));
-    };
-
-    // Start loading
-    img.src = imagePath;
-  });
+  return ctx.getImageData(0, 0, canvas.width, canvas.height)
 }

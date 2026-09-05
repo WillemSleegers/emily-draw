@@ -1,5 +1,5 @@
 import { detectRegions, type RegionMap } from "@/lib/regionDetection"
-import { loadImageData } from "@/lib/imageLoader"
+import { loadImage, extractImageData } from "@/lib/imageLoader"
 import {
   BOUNDARY_THRESHOLD,
   MIN_REGION_SIZE,
@@ -14,15 +14,18 @@ export interface ProcessedImageData {
 /**
  * Process an image for the drawing canvas
  * - Detects fillable regions
- * - Loads the outline image
+ * - Returns the outline image for the overlay
+ *
+ * The image is loaded and decoded once and used for both, rather than being
+ * fetched twice under two different Image elements.
  */
 export async function processImage(
   imageSrc: string | { src: string }
 ): Promise<ProcessedImageData> {
   const imgUrl = typeof imageSrc === "string" ? imageSrc : imageSrc.src
 
-  // Load and process image data for region detection
-  const imageData = await loadImageData(imgUrl)
+  const outlineImage = await loadImage(imgUrl)
+  const imageData = extractImageData(outlineImage)
   const regionMap = detectRegions(
     imageData,
     BOUNDARY_THRESHOLD,
@@ -30,20 +33,5 @@ export async function processImage(
     REGION_DILATION_RADIUS
   )
 
-  // Load outline image
-  const outlineImage = await loadOutlineImage(imgUrl)
-
   return { regionMap, outlineImage }
-}
-
-/**
- * Load the outline image
- */
-function loadOutlineImage(imgUrl: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => resolve(img)
-    img.onerror = () => reject(new Error("Failed to load outline image"))
-    img.src = imgUrl
-  })
 }
