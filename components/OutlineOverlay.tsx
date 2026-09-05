@@ -4,31 +4,31 @@ import { useEffect, useRef } from "react"
 
 interface OutlineOverlayProps {
   outlineImage: HTMLImageElement
-  size: number
+  width: number
+  height: number
 }
 
 export default function OutlineOverlay({
   outlineImage,
-  size,
+  width,
+  height,
 }: OutlineOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-
-    const ctx = canvas.getContext("2d")
+    const ctx = canvasRef.current?.getContext("2d")
     if (!ctx) return
 
     // Draw scaled to canvas size so SVGs fill correctly
-    ctx.drawImage(outlineImage, 0, 0, size, size)
-  }, [outlineImage, size])
+    ctx.clearRect(0, 0, width, height)
+    ctx.drawImage(outlineImage, 0, 0, width, height)
+  }, [outlineImage, width, height])
 
   return (
     <canvas
       ref={canvasRef}
-      width={size}
-      height={size}
+      width={width}
+      height={height}
       className="absolute top-0 left-0 w-full h-full pointer-events-none mix-blend-multiply"
     />
   )

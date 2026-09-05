@@ -17,6 +17,65 @@ interface BrushSettingsProps {
   onStayWithinLinesChange: (value: boolean) => void
 }
 
+/** A bordered container that stacks its buttons along the short axis. */
+function ToolGroup({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex portrait:flex-row landscape:flex-col gap-3 p-2 bg-card rounded-xl border-4 border-border portrait:h-20 landscape:w-20 items-center">
+      {children}
+    </div>
+  )
+}
+
+/**
+ * One square option button. `selected` is both the visual state and the
+ * accessible state - these are the app's only labels, since a three-year-old
+ * can't read.
+ */
+function ToggleButton({
+  selected,
+  onClick,
+  label,
+  children,
+}: {
+  selected: boolean
+  onClick: () => void
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={label}
+      aria-pressed={selected}
+      className={`h-14 aspect-square rounded-xl border-4 flex items-center justify-center transition-all ${
+        selected
+          ? "bg-primary border-primary scale-105"
+          : "bg-card border-border hover:border-primary"
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
+
+/** The dot preview inside a brush-size / brush-type button. */
+function Dot({ px, selected, soft }: { px: number; selected: boolean; soft?: boolean }) {
+  return (
+    <div
+      className={`rounded-full ${soft ? "blur-sm" : ""} ${
+        selected ? "bg-primary-foreground" : "bg-foreground"
+      }`}
+      style={{ width: px, height: px }}
+    />
+  )
+}
+
+const SIZE_OPTIONS: { value: BrushSize; previewPx: number; label: string }[] = [
+  { value: "small", previewPx: 12, label: "Small brush" },
+  { value: "medium", previewPx: 20, label: "Medium brush" },
+  { value: "large", previewPx: 32, label: "Big brush" },
+]
+
 export default function BrushSettings({
   size,
   onSizeChange,
@@ -29,147 +88,71 @@ export default function BrushSettings({
 }: BrushSettingsProps) {
   return (
     <div className="flex portrait:contents landscape:flex-col landscape:flex-wrap gap-4">
-      {/* Brush Size Buttons */}
-      <div className="flex portrait:flex-row landscape:flex-col gap-3 p-2 bg-card rounded-xl border-4 border-border portrait:h-20 landscape:w-20 items-center">
-        <button
-          onClick={() => onSizeChange("small")}
-          className={`h-14 aspect-square rounded-xl border-4 flex items-center justify-center transition-all ${
-            size === "small"
-              ? "bg-primary border-primary scale-105"
-              : "bg-card border-border hover:border-primary"
-          }`}
-        >
-          <div
-            className={`rounded-full ${
-              size === "small" ? "bg-primary-foreground" : "bg-foreground"
-            }`}
-            style={{ width: "12px", height: "12px" }}
-          />
-        </button>
+      <ToolGroup>
+        {SIZE_OPTIONS.map(({ value, previewPx, label }) => (
+          <ToggleButton
+            key={value}
+            selected={size === value}
+            onClick={() => onSizeChange(value)}
+            label={label}
+          >
+            <Dot px={previewPx} selected={size === value} />
+          </ToggleButton>
+        ))}
+      </ToolGroup>
 
-        <button
-          onClick={() => onSizeChange("medium")}
-          className={`h-14 aspect-square rounded-xl border-4 flex items-center justify-center transition-all ${
-            size === "medium"
-              ? "bg-primary border-primary scale-105"
-              : "bg-card border-border hover:border-primary"
-          }`}
-        >
-          <div
-            className={`rounded-full ${
-              size === "medium" ? "bg-primary-foreground" : "bg-foreground"
-            }`}
-            style={{ width: "20px", height: "20px" }}
-          />
-        </button>
-
-        <button
-          onClick={() => onSizeChange("large")}
-          className={`h-14 aspect-square rounded-xl border-4 flex items-center justify-center transition-all ${
-            size === "large"
-              ? "bg-primary border-primary scale-105"
-              : "bg-card border-border hover:border-primary"
-          }`}
-        >
-          <div
-            className={`rounded-full ${
-              size === "large" ? "bg-primary-foreground" : "bg-foreground"
-            }`}
-            style={{ width: "32px", height: "32px" }}
-          />
-        </button>
-      </div>
-
-      {/* Brush Type Buttons */}
-      <div className="flex portrait:flex-row landscape:flex-col gap-3 p-2 bg-card rounded-xl border-4 border-border portrait:h-20 landscape:w-20 items-center">
-        <button
+      <ToolGroup>
+        <ToggleButton
+          selected={brushType === "solid"}
           onClick={() => onBrushTypeChange("solid")}
-          className={`h-14 aspect-square rounded-xl border-4 flex items-center justify-center transition-all ${
-            brushType === "solid"
-              ? "bg-primary border-primary scale-105"
-              : "bg-card border-border hover:border-primary"
-          }`}
+          label="Solid brush"
         >
-          <div
-            className={`rounded-full ${
-              brushType === "solid"
-                ? "bg-primary-foreground"
-                : "bg-foreground"
-            }`}
-            style={{ width: "24px", height: "24px" }}
-          />
-        </button>
-
-        <button
+          <Dot px={24} selected={brushType === "solid"} />
+        </ToggleButton>
+        <ToggleButton
+          selected={brushType === "soft"}
           onClick={() => onBrushTypeChange("soft")}
-          className={`h-14 aspect-square rounded-xl border-4 flex items-center justify-center transition-all ${
-            brushType === "soft"
-              ? "bg-primary border-primary scale-105"
-              : "bg-card border-border hover:border-primary"
-          }`}
+          label="Soft brush"
         >
-          <div
-            className={`rounded-full blur-sm ${
-              brushType === "soft" ? "bg-primary-foreground" : "bg-foreground"
-            }`}
-            style={{ width: "24px", height: "24px" }}
-          />
-        </button>
-      </div>
+          <Dot px={24} selected={brushType === "soft"} soft />
+        </ToggleButton>
+      </ToolGroup>
 
-      {/* Eraser Toggle */}
-      <div className="flex portrait:flex-row landscape:flex-col gap-3 p-2 bg-card rounded-xl border-4 border-border portrait:h-20 landscape:w-20 items-center">
-        <button
+      <ToolGroup>
+        <ToggleButton
+          selected={isEraser}
           onClick={() => onEraserChange(!isEraser)}
-          className={`h-14 aspect-square rounded-xl border-4 flex items-center justify-center transition-all ${
-            isEraser
-              ? "bg-primary border-primary scale-105"
-              : "bg-card border-border hover:border-primary"
-          }`}
+          label="Eraser"
         >
           <EraserIcon
-            className={
-              isEraser ? "text-primary-foreground" : "text-foreground"
-            }
+            className={isEraser ? "text-primary-foreground" : "text-foreground"}
             size={24}
           />
-        </button>
-      </div>
+        </ToggleButton>
+      </ToolGroup>
 
-      {/* Stay Within Lines Toggle */}
-      <div className="flex portrait:flex-row landscape:flex-col gap-3 p-2 bg-card rounded-xl border-4 border-border portrait:h-20 landscape:w-20 items-center">
-        <button
+      <ToolGroup>
+        <ToggleButton
+          selected={stayWithinLines}
           onClick={() => onStayWithinLinesChange(true)}
-          className={`h-14 aspect-square rounded-xl border-4 flex items-center justify-center transition-all ${
-            stayWithinLines
-              ? "bg-primary border-primary scale-105"
-              : "bg-card border-border hover:border-primary"
-          }`}
+          label="Stay inside the lines"
         >
           <ShapesIcon
-            className={
-              stayWithinLines ? "text-primary-foreground" : "text-foreground"
-            }
+            className={stayWithinLines ? "text-primary-foreground" : "text-foreground"}
             size={32}
           />
-        </button>
-
-        <button
+        </ToggleButton>
+        <ToggleButton
+          selected={!stayWithinLines}
           onClick={() => onStayWithinLinesChange(false)}
-          className={`h-14 aspect-square rounded-xl border-4 flex items-center justify-center transition-all ${
-            !stayWithinLines
-              ? "bg-primary border-primary scale-105"
-              : "bg-card border-border hover:border-primary"
-          }`}
+          label="Draw anywhere"
         >
           <PencilIcon
-            className={
-              !stayWithinLines ? "text-primary-foreground" : "text-foreground"
-            }
+            className={!stayWithinLines ? "text-primary-foreground" : "text-foreground"}
             size={32}
           />
-        </button>
-      </div>
+        </ToggleButton>
+      </ToolGroup>
     </div>
   )
 }

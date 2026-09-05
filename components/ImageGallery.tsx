@@ -42,6 +42,7 @@ export default function ImageGallery({ groups, onSelect }: ImageGalleryProps) {
                 key={image.id}
                 variant={"outline"}
                 onClick={() => onSelect(image)}
+                aria-label={`Color ${image.name}`}
                 className="size-auto h-auto p-2 border-4 border-brand-border hover:border-brand-accent-border hover:scale-105 transition-all shadow-lg hover:shadow-xl bg-card"
               >
                 <Image src={image.src} alt={image.name} width={200} height={200} priority={index === 0} />

@@ -11,6 +11,7 @@ import BrushSettings, {
 } from "@/components/BrushSettings"
 import { ProcessedImageData } from "@/lib/processImage"
 import { generateLayers, createLayerLookupTable } from "@/lib/layerGeneration"
+import { saveDrawing } from "@/lib/saveDrawing"
 import {
   ArrowBigLeftIcon,
   Undo2Icon,
@@ -21,12 +22,36 @@ import {
 import { Button } from "./ui/button"
 import { APP_BACKGROUND_GRADIENT } from "@/lib/constants"
 
-// Fixed canvas dimensions (all images are 1000x1000)
-const CANVAS_SIZE = 1000
-
 interface DrawingScreenProps {
   data: ProcessedImageData
   onBack: () => void
+}
+
+/** One large square icon button, sized for a small finger. */
+function ToolButton({
+  icon: Icon,
+  label,
+  onClick,
+  disabled,
+  hoverBorder = "hover:border-primary",
+}: {
+  icon: typeof ArrowBigLeftIcon
+  label: string
+  onClick: () => void
+  disabled?: boolean
+  hoverBorder?: string
+}) {
+  return (
+    <Button
+      variant="outline"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      className={`shrink-0 size-20 rounded-xl border-4 border-border bg-card disabled:opacity-40 disabled:cursor-not-allowed ${hoverBorder}`}
+    >
+      <Icon className="size-8" />
+    </Button>
+  )
 }
 
 export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
@@ -37,15 +62,18 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
   const [stayWithinLines, setStayWithinLines] = useState(true)
   const { regionMap, outlineImage } = data
 
+  // Canvas dimensions come from the source image, not a hardcoded constant, so
+  // a non-1000px asset lines up instead of silently misaligning.
+  const { width: canvasWidth, height: canvasHeight } = regionMap
+
   // Generate drawable layers from region map (memoized)
-  const layers = useMemo(() => {
-    return generateLayers(regionMap)
-  }, [regionMap])
+  const layers = useMemo(() => generateLayers(regionMap), [regionMap])
 
   // Create O(1) lookup table for fast layer-at-point queries (memoized)
-  const lookupTable = useMemo(() => {
-    return createLayerLookupTable(layers, CANVAS_SIZE, CANVAS_SIZE)
-  }, [layers])
+  const lookupTable = useMemo(
+    () => createLayerLookupTable(layers, canvasWidth, canvasHeight),
+    [layers, canvasWidth, canvasHeight]
+  )
 
   // Ref to access Canvas undo/redo methods
   const canvasRef = useRef<CanvasRef>(null)
@@ -54,33 +82,9 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
 
-  // Handlers that call Canvas methods
-  // Note: Button states are updated via onHistoryChange callback
-  const handleUndo = () => {
-    canvasRef.current?.undo()
-  }
-
-  const handleRedo = () => {
-    canvasRef.current?.redo()
-  }
-
-  const handleClear = () => {
-    canvasRef.current?.clear()
-  }
-
   const handleSave = () => {
-    if (!canvasRef.current) return
-
-    // Get the composited image as a data URL
-    const dataUrl = canvasRef.current.save(outlineImage || undefined)
-
-    if (!dataUrl) return
-
-    // Create a temporary link and trigger download
-    const link = document.createElement("a")
-    link.download = "drawing.png"
-    link.href = dataUrl
-    link.click()
+    const canvas = canvasRef.current?.saveToCanvas(outlineImage || undefined)
+    if (canvas) void saveDrawing(canvas)
   }
 
   // Callback from Canvas when drawing state changes
@@ -89,121 +93,74 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
     setCanRedo(canvasRef.current?.canRedo() ?? false)
   }
 
+  // One definition, rendered in both the landscape column and the portrait row.
+  const toolbar = (
+    <>
+      <ToolButton icon={ArrowBigLeftIcon} label="Back to pictures" onClick={onBack} />
+      <ToolButton
+        icon={Undo2Icon}
+        label="Undo"
+        onClick={() => canvasRef.current?.undo()}
+        disabled={!canUndo}
+      />
+      <ToolButton
+        icon={Redo2Icon}
+        label="Redo"
+        onClick={() => canvasRef.current?.redo()}
+        disabled={!canRedo}
+      />
+      <ToolButton
+        icon={Trash2Icon}
+        label="Clear the picture"
+        onClick={() => canvasRef.current?.clear()}
+        hoverBorder="hover:border-destructive"
+      />
+      <ToolButton
+        icon={DownloadIcon}
+        label="Save the picture"
+        onClick={handleSave}
+        hoverBorder="hover:border-success"
+      />
+    </>
+  )
+
+  const brushSettings = (
+    <BrushSettings
+      size={brushSize}
+      onSizeChange={setBrushSize}
+      brushType={brushType}
+      onBrushTypeChange={setBrushType}
+      isEraser={isEraser}
+      onEraserChange={setIsEraser}
+      stayWithinLines={stayWithinLines}
+      onStayWithinLinesChange={setStayWithinLines}
+    />
+  )
+
   return (
     <div
       className={`flex portrait:flex-col landscape:flex-row gap-4 h-full w-full touch-none landscape:justify-center p-4 ${APP_BACKGROUND_GRADIENT}`}
     >
-      {/* Back button and undo/redo/clear/save - separate column in landscape, in row in portrait */}
+      {/* Landscape: tools in a left column, brush settings in their own column */}
       <div className="shrink-0 portrait:hidden landscape:flex flex-col gap-4">
-        <Button
-          variant="outline"
-          onClick={onBack}
-          className="size-20 rounded-xl border-4 border-border hover:border-primary bg-card"
-        >
-          <ArrowBigLeftIcon className="size-8" />
-        </Button>
-        <Button
-          variant="outline"
-          onClick={handleUndo}
-          disabled={!canUndo}
-          className="size-20 rounded-xl border-4 border-border hover:border-primary bg-card disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <Undo2Icon className="size-8" />
-        </Button>
-        <Button
-          variant="outline"
-          onClick={handleRedo}
-          disabled={!canRedo}
-          className="size-20 rounded-xl border-4 border-border hover:border-primary bg-card disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <Redo2Icon className="size-8" />
-        </Button>
-        <Button
-          variant="outline"
-          onClick={handleClear}
-          className="size-20 rounded-xl border-4 border-border hover:border-destructive bg-card"
-        >
-          <Trash2Icon className="size-8" />
-        </Button>
-        <Button
-          variant="outline"
-          onClick={handleSave}
-          className="size-20 rounded-xl border-4 border-border hover:border-success bg-card"
-        >
-          <DownloadIcon className="size-8" />
-        </Button>
+        {toolbar}
       </div>
-
-      {/* Controls row for portrait (includes back button + undo/redo/clear/save + controls) */}
-      <div className="shrink-0 portrait:flex landscape:hidden flex-row gap-4 w-full overflow-x-auto touch-pan-x justify-between">
-        <div className="flex gap-4">
-          <Button
-            variant="outline"
-            onClick={onBack}
-            className="shrink-0 size-20 rounded-xl border-4 border-border hover:border-primary bg-card"
-          >
-            <ArrowBigLeftIcon className="size-8" />
-          </Button>
-          <Button
-            variant="outline"
-            onClick={handleUndo}
-            disabled={!canUndo}
-            className="shrink-0-20 rounded-xl border-4 border-border hover:border-primary bg-card disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <Undo2Icon className="size-8" />
-          </Button>
-          <Button
-            variant="outline"
-            onClick={handleRedo}
-            disabled={!canRedo}
-            className="shrink-0 size-20 rounded-xl border-4 border-border hover:border-primary bg-card disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <Redo2Icon className="size-8" />
-          </Button>
-          <Button
-            variant="outline"
-            onClick={handleClear}
-            className="shrink-0 size-20 rounded-xl border-4 border-border hover:border-destructive bg-card"
-          >
-            <Trash2Icon className="size-8" />
-          </Button>
-          <Button
-            variant="outline"
-            onClick={handleSave}
-            className="shrink-0 size-20 rounded-xl border-4 border-border hover:border-primary bg-card"
-          >
-            <DownloadIcon className="size-8" />
-          </Button>
-        </div>
-        <BrushSettings
-          size={brushSize}
-          onSizeChange={setBrushSize}
-          brushType={brushType}
-          onBrushTypeChange={setBrushType}
-          isEraser={isEraser}
-          onEraserChange={setIsEraser}
-          stayWithinLines={stayWithinLines}
-          onStayWithinLinesChange={setStayWithinLines}
-        />
-      </div>
-
-      {/* Brush settings column for landscape */}
       <div className="shrink-0 portrait:hidden landscape:flex flex-col flex-wrap h-full gap-4">
-        <BrushSettings
-          size={brushSize}
-          onSizeChange={setBrushSize}
-          brushType={brushType}
-          onBrushTypeChange={setBrushType}
-          isEraser={isEraser}
-          onEraserChange={setIsEraser}
-          stayWithinLines={stayWithinLines}
-          onStayWithinLinesChange={setStayWithinLines}
-        />
+        {brushSettings}
+      </div>
+
+      {/* Portrait: tools and brush settings share one row above the canvas */}
+      <div className="shrink-0 portrait:flex landscape:hidden flex-row gap-4 w-full overflow-x-auto touch-pan-x justify-between">
+        <div className="flex gap-4">{toolbar}</div>
+        {brushSettings}
       </div>
 
       {/* Canvas (grows to fill available space) */}
       <div className="aspect-square flex items-center justify-center overflow-hidden">
-        <div className="relative aspect-square portrait:w-full portrait:max-h-full landscape:h-full landscape:max-w-full border-4 border-border rounded-2xl overflow-hidden">
+        <div
+          className="relative portrait:w-full portrait:max-h-full landscape:h-full landscape:max-w-full border-4 border-border rounded-2xl overflow-hidden"
+          style={{ aspectRatio: `${canvasWidth} / ${canvasHeight}` }}
+        >
           <Canvas
             ref={canvasRef}
             layers={layers}
@@ -216,7 +173,11 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
             onHistoryChange={handleHistoryChange}
           />
           {outlineImage && (
-            <OutlineOverlay outlineImage={outlineImage} size={CANVAS_SIZE} />
+            <OutlineOverlay
+              outlineImage={outlineImage}
+              width={canvasWidth}
+              height={canvasHeight}
+            />
           )}
         </div>
       </div>

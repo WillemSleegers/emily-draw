@@ -1,0 +1,10 @@
+# pnpm settings. pnpm 11 no longer reads the "pnpm" field in package.json,
+# so overrides and build approvals live here.
+
+# unrs-resolver (eslint-config-next's import resolver) runs a postinstall to
+# link its native binding.
+allowBuilds:
+  unrs-resolver: true
+
+overrides:
+  postcss: ^8.5.14

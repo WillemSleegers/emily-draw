@@ -1,10 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import ImageGallery from "@/components/ImageGallery"
 import DrawingScreen from "@/components/DrawingScreen"
 import LoadingScreen from "@/components/LoadingScreen"
 import ErrorBoundary from "@/components/ErrorBoundary"
+import ErrorScreen from "@/components/ErrorScreen"
 import { processImage, type ProcessedImageData } from "@/lib/processImage"
 
 import circleImage from "@/assets/images/basic-shapes/circle.svg"
@@ -141,21 +142,44 @@ export default function Home() {
   const [processedData, setProcessedData] = useState<ProcessedImageData | null>(
     null,
   )
+  const [loadFailed, setLoadFailed] = useState(false)
+
+  // Tapping a second picture while the first is still processing would
+  // otherwise be a race: whichever finished last would win, regardless of
+  // which one the child actually chose last.
+  const requestIdRef = useRef(0)
 
   const handleImageSelect = async (image: ImageOption) => {
+    const requestId = ++requestIdRef.current
     setSelectedImage(image)
+    setProcessedData(null)
+    setLoadFailed(false)
     try {
       const data = await processImage(image.src)
+      if (requestId !== requestIdRef.current) return // superseded
       setProcessedData(data)
     } catch (error) {
       console.error("Error processing image:", error)
-      setSelectedImage(null)
+      if (requestId !== requestIdRef.current) return
+      setLoadFailed(true)
     }
   }
 
   const handleBack = () => {
+    requestIdRef.current++ // abandon any in-flight processing
     setSelectedImage(null)
     setProcessedData(null)
+    setLoadFailed(false)
+  }
+
+  // A picture that fails to load needs to say so - silently bouncing back to
+  // the gallery reads as "tapping did nothing".
+  if (loadFailed) {
+    return (
+      <div className="h-full overflow-hidden">
+        <ErrorScreen onReset={handleBack} />
+      </div>
+    )
   }
 
   // Show loading screen while processing
