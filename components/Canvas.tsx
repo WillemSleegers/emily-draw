@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState, useMemo, useImperativeHandle } from "react"
+import { useEffect, useRef, useState, useImperativeHandle } from "react"
 import { getCanvasCoordinates } from "@/lib/canvasUtils"
 import {
   findLayerAtPoint,
@@ -10,6 +10,12 @@ import {
 } from "@/lib/layerGeneration"
 import type { BrushType } from "./BrushSettings"
 import { ERASER_COLOR, MAX_HISTORY } from "@/lib/constants"
+import {
+  startStrokeSound,
+  moveStrokeSound,
+  endStrokeSound,
+  type StrokeSoundKind,
+} from "@/lib/sound"
 
 interface CanvasProps {
   layers: DrawingLayer[]
@@ -116,12 +122,9 @@ export default function Canvas({
   // rather than a snapshot of every layer in the image.
   const pendingUndoRef = useRef<HistoryEntry | null>(null)
 
-  // O(1) layer lookup by id, for restoring history snapshots
-  const layerById = useMemo(() => {
-    const map = new Map<number, DrawingLayer>()
-    layers.forEach((layer) => map.set(layer.id, layer))
-    return map
-  }, [layers])
+  // O(1) layer lookup by id, for restoring history snapshots. The React
+  // Compiler memoises this on `layers`, so it is rebuilt only per picture.
+  const layerById = new Map(layers.map((layer) => [layer.id, layer]))
 
   const snapshotLayer = (layer: DrawingLayer): ImageData =>
     layer.ctx.getImageData(0, 0, layer.canvas.width, layer.canvas.height)
@@ -299,6 +302,9 @@ export default function Canvas({
     return getCanvasCoordinates(rect, lookupTable.width, lookupTable.height, input)
   }
 
+  /** 0 at the bottom of the picture, 1 at the top - higher strokes play higher notes. */
+  const heightFraction = (y: number) => 1 - y / lookupTable.height
+
   // Apply brush settings to a context
   const applyBrushSettings = (ctx: CanvasRenderingContext2D) => {
     const color = isEraser ? ERASER_COLOR : fillColor
@@ -421,6 +427,13 @@ export default function Canvas({
     // entry, so a deferred dot would paint nothing (or land in the next
     // stroke's history entry). One arc fill is not worth deferring.
     paintDot(coords.x, coords.y, targetLayer)
+
+    const soundKind: StrokeSoundKind = isEraser
+      ? "swish"
+      : brushType === "soft"
+        ? "pad"
+        : "pluck"
+    startStrokeSound(soundKind, fillColor, heightFraction(coords.y))
   }
 
   const handleMove = (input: DrawInput) => {
@@ -453,6 +466,10 @@ export default function Canvas({
       paintSegment(from.x, from.y, coords.x, coords.y)
     }
 
+    moveStrokeSound(
+      heightFraction(coords.y),
+      Math.hypot(coords.x - lastPoint.x, coords.y - lastPoint.y) / lookupTable.width
+    )
     lastPointRef.current = coords
   }
 
@@ -463,6 +480,7 @@ export default function Canvas({
    */
   const endStroke = () => {
     const committed = commitPendingUndo()
+    endStrokeSound()
     setIsDrawing(false)
     activeLayerRef.current = null
     lastPointRef.current = null

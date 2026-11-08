@@ -19,6 +19,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Color Picker**: Simple color selection interface with visual feedback
 - **Undo/Redo**: Full drawing history with undo and redo buttons
 - **Save/Export**: Download completed artwork as PNG images
+- **Relaxing Sound**: Synthesised (Web Audio, no files) music-box notes while drawing, a pad for the soft brush, a soft whoosh for the eraser, and small phrases for buttons; mute toggle persisted in `localStorage`; the iPad silent switch is respected
 - **Automatic Drawing Continuation**: Seamlessly resume drawing when re-entering the canvas while holding down, maintaining the original region
 
 ### Technical Stack
@@ -39,7 +40,7 @@ pnpm lint
 ### Tech Stack
 
 - **Framework**: Next.js 16 with App Router and Turbopack
-- **React**: v19.2
+- **React**: v19.2, with the React Compiler enabled (`reactCompiler: true`) - prefer it over manual `useMemo`/`useCallback`
 - **TypeScript**: Strict mode enabled (target: ES2017)
 - **Styling**: Tailwind CSS v4 with PostCSS
 - **UI Components**: shadcn/ui (New York style) with lucide-react icons
@@ -68,6 +69,8 @@ pnpm lint
   - `imageLoader.ts` - Image loading and pixel extraction
   - `processImage.ts` - Image processing pipeline
   - `saveDrawing.ts` - Export the finished artwork (Web Share on iPad, download elsewhere)
+  - `sound.ts` - Synthesised drawing sounds, mute state, and audio unlock on first gesture
+  - `color.ts` - Hex to HSL conversion (picks each colour's note)
   - `constants.ts` - Application-wide constants (brush sizes, thresholds, etc.)
   - `utils.ts` - General utilities including `cn()` helper
 - `/assets` - Static assets

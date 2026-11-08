@@ -1,12 +1,13 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import ImageGallery from "@/components/ImageGallery"
 import DrawingScreen from "@/components/DrawingScreen"
 import LoadingScreen from "@/components/LoadingScreen"
 import ErrorBoundary from "@/components/ErrorBoundary"
 import ErrorScreen from "@/components/ErrorScreen"
 import { processImage, type ProcessedImageData } from "@/lib/processImage"
+import { installAudioUnlock } from "@/lib/sound"
 
 import circleImage from "@/assets/images/basic-shapes/circle.svg"
 import circlesImage from "@/assets/images/basic-shapes/circles.svg"
@@ -143,6 +144,10 @@ export default function Home() {
     null,
   )
   const [loadFailed, setLoadFailed] = useState(false)
+
+  // Browsers only start audio from a gesture; listening app-wide means the tap
+  // that picks a picture already enables sound for the drawing screen.
+  useEffect(() => installAudioUnlock(), [])
 
   // Tapping a second picture while the first is still processing would
   // otherwise be a race: whichever finished last would win, regardless of

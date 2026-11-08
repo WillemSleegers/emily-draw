@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useRef } from "react"
+import { useState, useMemo, useRef, useSyncExternalStore } from "react"
 import Canvas, { type CanvasRef } from "@/components/Canvas"
 import OutlineOverlay from "@/components/OutlineOverlay"
 import ColorPicker from "@/components/ColorPicker"
@@ -13,11 +13,20 @@ import { ProcessedImageData } from "@/lib/processImage"
 import { generateLayers, createLayerLookupTable } from "@/lib/layerGeneration"
 import { saveDrawing } from "@/lib/saveDrawing"
 import {
+  isMuted,
+  setMuted,
+  subscribeMuted,
+  playColorNote,
+  playUiSound,
+} from "@/lib/sound"
+import {
   ArrowBigLeftIcon,
   Undo2Icon,
   Redo2Icon,
   Trash2Icon,
   DownloadIcon,
+  Volume2Icon,
+  VolumeXIcon,
 } from "lucide-react"
 import { Button } from "./ui/button"
 import { APP_BACKGROUND_GRADIENT } from "@/lib/constants"
@@ -66,7 +75,9 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
   // a non-1000px asset lines up instead of silently misaligning.
   const { width: canvasWidth, height: canvasHeight } = regionMap
 
-  // Generate drawable layers from region map (memoized)
+  // Kept as an explicit useMemo despite the React Compiler: these canvases hold
+  // the child's drawing, so they must be created once per picture, not merely
+  // "usually" cached.
   const layers = useMemo(() => generateLayers(regionMap), [regionMap])
 
   // Create O(1) lookup table for fast layer-at-point queries (memoized)
@@ -82,9 +93,23 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
 
+  const muted = useSyncExternalStore(subscribeMuted, isMuted, () => false)
+
   const handleSave = () => {
     const canvas = canvasRef.current?.saveToCanvas(outlineImage || undefined)
-    if (canvas) void saveDrawing(canvas)
+    if (!canvas) return
+    playUiSound("save")
+    void saveDrawing(canvas)
+  }
+
+  const handleColorChange = (color: string) => {
+    setFillColor(color)
+    playColorNote(color)
+  }
+
+  const toggleMuted = () => {
+    setMuted(!muted)
+    if (muted) playUiSound("unmute") // just switched on: confirm it audibly
   }
 
   // Callback from Canvas when drawing state changes
@@ -100,19 +125,28 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
       <ToolButton
         icon={Undo2Icon}
         label="Undo"
-        onClick={() => canvasRef.current?.undo()}
+        onClick={() => {
+          canvasRef.current?.undo()
+          playUiSound("undo")
+        }}
         disabled={!canUndo}
       />
       <ToolButton
         icon={Redo2Icon}
         label="Redo"
-        onClick={() => canvasRef.current?.redo()}
+        onClick={() => {
+          canvasRef.current?.redo()
+          playUiSound("redo")
+        }}
         disabled={!canRedo}
       />
       <ToolButton
         icon={Trash2Icon}
         label="Clear the picture"
-        onClick={() => canvasRef.current?.clear()}
+        onClick={() => {
+          canvasRef.current?.clear()
+          playUiSound("clear")
+        }}
         hoverBorder="hover:border-destructive"
       />
       <ToolButton
@@ -120,6 +154,11 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
         label="Save the picture"
         onClick={handleSave}
         hoverBorder="hover:border-success"
+      />
+      <ToolButton
+        icon={muted ? VolumeXIcon : Volume2Icon}
+        label={muted ? "Turn sound on" : "Turn sound off"}
+        onClick={toggleMuted}
       />
     </>
   )
@@ -184,7 +223,7 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
 
       {/* Color picker - Right column in landscape, bottom row in portrait */}
       <div className="shrink-0 landscape:h-full">
-        <ColorPicker selectedColor={fillColor} onColorChange={setFillColor} />
+        <ColorPicker selectedColor={fillColor} onColorChange={handleColorChange} />
       </div>
     </div>
   )

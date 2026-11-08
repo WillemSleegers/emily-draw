@@ -1,6 +1,10 @@
 import type { NextConfig } from "next"
 
 const nextConfig: NextConfig = {
+  // Automatic memoisation. The stable Babel transform, not the experimental
+  // Rust port (`experimental.turbopackRustReactCompiler`).
+  reactCompiler: true,
+
   // Allow the dev server to be reached from other devices on the LAN (the
   // iPad) without Next blocking its dev-only assets and HMR socket.
   //
