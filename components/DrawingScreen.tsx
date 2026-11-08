@@ -102,9 +102,19 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
     void saveDrawing(canvas)
   }
 
+  // Choosing a colour or a brush type only makes sense for painting, so it
+  // also puts the eraser down - a child who left the eraser on and taps a
+  // colour expects to colour, not to keep rubbing out. Brush size is left
+  // alone: the eraser uses it too.
   const handleColorChange = (color: string) => {
     setFillColor(color)
+    setIsEraser(false)
     playColorNote(color)
+  }
+
+  const handleBrushTypeChange = (type: BrushType) => {
+    setBrushType(type)
+    setIsEraser(false)
   }
 
   const toggleMuted = () => {
@@ -145,6 +155,7 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
         label="Clear the picture"
         onClick={() => {
           canvasRef.current?.clear()
+          setIsEraser(false) // nothing left to erase
           playUiSound("clear")
         }}
         hoverBorder="hover:border-destructive"
@@ -168,7 +179,7 @@ export default function DrawingScreen({ data, onBack }: DrawingScreenProps) {
       size={brushSize}
       onSizeChange={setBrushSize}
       brushType={brushType}
-      onBrushTypeChange={setBrushType}
+      onBrushTypeChange={handleBrushTypeChange}
       isEraser={isEraser}
       onEraserChange={setIsEraser}
       stayWithinLines={stayWithinLines}
